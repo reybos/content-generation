@@ -49,3 +49,40 @@ export const GenerationDataSchema = z.object({
     hashtags: z.string()
 });
 export type GenerationData = z.infer<typeof GenerationDataSchema>;
+
+// New format schemas and types
+export const PromptSchema = z.object({
+    line: z.string(),
+    prompt: z.string()
+});
+export type Prompt = z.infer<typeof PromptSchema>;
+
+export const VideoPromptSchema = z.object({
+    line: z.string(),
+    video_prompt: z.string()
+});
+export type VideoPrompt = z.infer<typeof VideoPromptSchema>;
+
+export const NewFormatDataSchema = z.object({
+    global_style: z.string(),
+    prompts: z.array(PromptSchema),
+    title: z.string(),
+    description: z.string(),
+    hashtags: z.string()
+});
+export type NewFormatData = z.infer<typeof NewFormatDataSchema>;
+
+// New format with video prompts schema and type
+export const NewFormatWithVideoDataSchema = z.object({
+    global_style: z.string(),
+    prompts: z.array(PromptSchema),
+    video_prompts: z.array(VideoPromptSchema),
+    title: z.string(),
+    description: z.string(),
+    hashtags: z.string()
+});
+export type NewFormatWithVideoData = z.infer<typeof NewFormatWithVideoDataSchema>;
+
+// Union type for all formats
+export const ContentDataSchema = z.union([GenerationDataSchema, NewFormatDataSchema, NewFormatWithVideoDataSchema]);
+export type ContentData = z.infer<typeof ContentDataSchema>;

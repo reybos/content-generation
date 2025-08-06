@@ -2,7 +2,7 @@
 
 import fs from 'fs-extra';
 import path from 'path';
-import { GenerationData } from '../types';
+import { GenerationData, NewFormatData, ContentData } from '../types';
 
 // Helper to resolve the generations base directory
 function resolveGenerationsBaseDir(): string {
@@ -75,10 +75,10 @@ export class FileService {
             return [];
         }
     }
-    public async readFile(filePath: string): Promise<GenerationData> {
+    public async readFile(filePath: string): Promise<ContentData> {
         try {
             const content: string = await fs.readFile(filePath, { encoding: 'utf-8' });
-            return JSON.parse(content) as GenerationData;
+            return JSON.parse(content) as ContentData;
         } catch (error) {
             throw new Error(`Failed to read file ${filePath}: ${error}`);
         }

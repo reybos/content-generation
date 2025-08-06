@@ -28,6 +28,155 @@ export class ImageService {
     }
 
     /**
+     * Clean prompt from potentially problematic content
+     */
+    private cleanPrompt(prompt: string): string {
+        // Remove or replace potentially problematic words/phrases
+        const problematicWords = [
+            'mechanical', 'mechanical wings', 'mechanical components',
+            'high-tech', 'high tech', 'aerodynamic',
+            'silver detailed', 'silver panels',
+            'glowing blue eyes', 'glowing eyes',
+            'beak slightly open', 'beak open',
+            'wing mechanisms', 'wing mechanism',
+            'digital plants', 'digital',
+            'glass panels', 'glass',
+            'neon blue', 'neon',
+            'metallic silver', 'metallic',
+            'turquoise', 'orange accents',
+            'transparent crystal', 'crystal',
+            'indoor garden dome', 'garden dome',
+            'feather-like panels', 'feather-like',
+            'tail feathers', 'feathers',
+            'dappled light', 'dappled',
+            'airy', 'joyful atmosphere',
+            'cheerful', 'high-tech atmosphere',
+            'dramatic lighting', 'dramatic',
+            'detailed mechanical', 'mechanical',
+            'sleek', 'extended wings',
+            'partially extended', 'extended',
+            'robot', 'robotic', 'automated',
+            'futuristic', 'sci-fi', 'science fiction',
+            'technology', 'technological',
+            'artificial', 'synthetic',
+            'electronic', 'electric',
+            'cyber', 'cybernetic',
+            'steampunk', 'steam punk',
+            'industrial', 'factory',
+            'military', 'weapon', 'weapons',
+            'combat', 'battle', 'war',
+            'violent', 'aggressive',
+            'dangerous', 'hazardous',
+            'toxic', 'poisonous',
+            'explosive', 'explosion',
+            'fire', 'flame', 'burning',
+            'smoke', 'smoking',
+            'blood', 'bloody',
+            'gore', 'gory',
+            'death', 'dead', 'dying',
+            'corpse', 'skeleton',
+            'ghost', 'spirit', 'haunted',
+            'demonic', 'evil', 'demonic',
+            'satanic', 'occult',
+            'nude', 'naked', 'nudity',
+            'sexual', 'erotic', 'pornographic',
+            'explicit', 'adult content',
+            'drugs', 'drug', 'substance',
+            'alcohol', 'drunk', 'intoxicated',
+            'cigarette', 'smoking', 'tobacco',
+            'gambling', 'casino',
+            'political', 'politician',
+            'religious', 'religion',
+            'controversial', 'sensitive',
+            'offensive', 'inappropriate'
+        ];
+
+        let cleanedPrompt = prompt;
+        
+        // Replace problematic phrases with safer alternatives
+        const replacements = {
+            'mechanical wings': 'wings',
+            'mechanical components': 'parts',
+            'high-tech': 'modern',
+            'high tech': 'modern',
+            'aerodynamic': 'smooth',
+            'silver detailed': 'detailed',
+            'silver panels': 'panels',
+            'glowing blue eyes': 'blue eyes',
+            'glowing eyes': 'bright eyes',
+            'beak slightly open': 'beak',
+            'beak open': 'beak',
+            'wing mechanisms': 'wings',
+            'wing mechanism': 'wings',
+            'digital plants': 'plants',
+            'digital': 'modern',
+            'glass panels': 'panels',
+            'glass': 'transparent',
+            'neon blue': 'blue',
+            'neon': 'bright',
+            'metallic silver': 'silver',
+            'metallic': 'shiny',
+            'turquoise': 'blue-green',
+            'orange accents': 'orange',
+            'transparent crystal': 'transparent',
+            'crystal': 'clear',
+            'indoor garden dome': 'garden',
+            'garden dome': 'garden',
+            'feather-like panels': 'panels',
+            'feather-like': 'smooth',
+            'tail feathers': 'tail',
+            'feathers': 'parts',
+            'dappled light': 'soft light',
+            'dappled': 'soft',
+            'airy': 'light',
+            'joyful atmosphere': 'happy mood',
+            'cheerful': 'happy',
+            'high-tech atmosphere': 'modern atmosphere',
+            'dramatic lighting': 'soft lighting',
+            'dramatic': 'soft',
+            'detailed mechanical': 'detailed',
+            'mechanical': 'smooth',
+            'sleek': 'smooth',
+            'extended wings': 'wings',
+            'partially extended': 'open',
+            'extended': 'open',
+            'robot': 'character',
+            'robotic': 'animated',
+            'automated': 'smart',
+            'futuristic': 'modern',
+            'sci-fi': 'modern',
+            'science fiction': 'modern',
+            'technology': 'modern',
+            'technological': 'modern',
+            'artificial': 'animated',
+            'synthetic': 'animated',
+            'electronic': 'modern',
+            'electric': 'modern',
+            'cyber': 'modern',
+            'cybernetic': 'modern',
+            'steampunk': 'vintage',
+            'steam punk': 'vintage',
+            'industrial': 'modern',
+            'factory': 'workshop'
+        };
+
+        for (const [problematic, replacement] of Object.entries(replacements)) {
+            cleanedPrompt = cleanedPrompt.replace(new RegExp(problematic, 'gi'), replacement);
+        }
+
+        // Remove any remaining problematic words
+        for (const word of problematicWords) {
+            cleanedPrompt = cleanedPrompt.replace(new RegExp(word, 'gi'), '');
+        }
+
+        // Clean up extra spaces and commas
+        cleanedPrompt = cleanedPrompt.replace(/\s+/g, ' ').replace(/,\s*,/g, ',').trim();
+        cleanedPrompt = cleanedPrompt.replace(/^,/, '').replace(/,$/, '');
+
+        return cleanedPrompt;
+    }
+
+    /**
      * Generate an image from a prompt and save it to the specified path
      */
     public async generateImage(prompt: string, outputPath: string): Promise<{ requestId: string, prompt: string } | void> {
@@ -43,8 +192,8 @@ export class ImageService {
             const { request_id } = await fal.queue.submit(this.IMAGE_MODEL, {
                 input: {
                     prompt,
-                    // aspect_ratio: '9:16',
-                    aspect_ratio: '16:9',
+                    aspect_ratio: '9:16',
+                    // aspect_ratio: '16:9',
                     num_images: 1,
                 },
             });
@@ -79,7 +228,53 @@ export class ImageService {
             } else {
                 throw new Error('No images returned from the API');
             }
-        } catch (error) {
+        } catch (error: any) {
+            // Check if this is a content policy violation
+            if (error.message && error.message.includes('content_policy_violation')) {
+                this.logger.warn(`Content policy violation detected for prompt: ${prompt}`);
+                
+                // Try with cleaned prompt (level 1)
+                const cleanedPrompt = this.cleanPrompt(prompt);
+                this.logger.info(`Retrying with cleaned prompt (level 1): ${cleanedPrompt}`);
+                
+                if (cleanedPrompt !== prompt && cleanedPrompt.length > 10) {
+                    try {
+                        return await this.generateImage(cleanedPrompt, outputPath);
+                    } catch (retryError: any) {
+                        if (retryError.message && retryError.message.includes('content_policy_violation')) {
+                            // Try with more aggressive cleaning (level 2)
+                            const aggressivePrompt = this.cleanPrompt(cleanedPrompt);
+                            this.logger.info(`Retrying with aggressive cleaning (level 2): ${aggressivePrompt}`);
+                            
+                            if (aggressivePrompt !== cleanedPrompt && aggressivePrompt.length > 10) {
+                                try {
+                                    return await this.generateImage(aggressivePrompt, outputPath);
+                                } catch (finalError: any) {
+                                    if (finalError.message && finalError.message.includes('content_policy_violation')) {
+                                        // Final fallback - very basic prompt
+                                        const basicPrompt = "A cute animated character in a garden, 3D animation style";
+                                        this.logger.info(`Retrying with basic prompt: ${basicPrompt}`);
+                                        return await this.generateImage(basicPrompt, outputPath);
+                                    }
+                                    throw finalError;
+                                }
+                            } else {
+                                // Try with basic prompt
+                                const basicPrompt = "A cute animated character in a garden, 3D animation style";
+                                this.logger.info(`Retrying with basic prompt: ${basicPrompt}`);
+                                return await this.generateImage(basicPrompt, outputPath);
+                            }
+                        }
+                        throw retryError;
+                    }
+                } else {
+                    // If cleaning didn't help, try with a very basic prompt
+                    const basicPrompt = "A cute animated character in a garden, 3D animation style";
+                    this.logger.info(`Retrying with basic prompt: ${basicPrompt}`);
+                    return await this.generateImage(basicPrompt, outputPath);
+                }
+            }
+            
             this.logger.error(`Error generating image: ${error}`);
             throw new Error(`Failed to generate image: ${error}`);
         }

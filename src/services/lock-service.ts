@@ -87,6 +87,22 @@ export class LockService {
         }
     }
 
+    public async isLocked(folderPath: string): Promise<boolean> {
+        const lockFilePath = path.join(folderPath, '.lock');
+        
+        try {
+            if (!(await fs.pathExists(lockFilePath))) {
+                return false;
+            }
+
+            const isStale = await this.isLockStale(lockFilePath);
+            return !isStale; // Если блокировка не устарела, значит папка заблокирована
+        } catch (error) {
+            this.logger.error(`Error checking if folder is locked: ${folderPath}`, error);
+            return false; // В случае ошибки считаем, что папка не заблокирована
+        }
+    }
+
     private async isLockStale(lockFilePath: string): Promise<boolean> {
         try {
             if (!(await fs.pathExists(lockFilePath))) {

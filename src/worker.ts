@@ -1,7 +1,7 @@
 /* START GENAI */
 
 import { GenerationData } from "./types";
-import { FileService, ImageService, VideoService, LockService, StateService, PreprocessWorker } from "./services";
+import { FileService, ImageService, VideoService, LockService, StateService, UniversalWorker } from "./services";
 import { Logger, sleep } from "./utils";
 import * as path from "path";
 import * as fs from "fs-extra";
@@ -26,34 +26,17 @@ export class ContentGenerationWorker {
         this.logger.info("Starting content generation worker");
         this.isRunning = true;
 
-        const preprocessWorker = new PreprocessWorker();
+        const universalWorker = new UniversalWorker();
 
         while (this.isRunning) {
             try {
                 // 1. Preprocess: если есть json-файлы в unprocessed, сначала обрабатываем их
                 const unprocessedFiles = await this.fileService.getUnprocessedFiles();
                 if (unprocessedFiles.length > 0) {
-                    this.logger.info(`Found ${unprocessedFiles.length} unprocessed JSON files, running preprocess worker`);
-                    await preprocessWorker.start();
+                    this.logger.info(`Found ${unprocessedFiles.length} unprocessed JSON files, running universal worker`);
+                    await universalWorker.start();
                     continue;
                 }
-
-                //  Обработка застрявших
-                // const inProgressDir = this.fileService.getInProgressDir();
-                //
-                // const staleFolders = await this.lockService.findFoldersWithStaleLocks(inProgressDir);
-                // if (staleFolders.length > 0) {
-                //     this.logger.info(`Found ${staleFolders.length} stale folders to resume`);
-                //     await this.resumeProcessing(staleFolders[0]);
-                //     continue;
-                // }
-                //
-                // const unlockFolders = await this.lockService.findFoldersWithoutLocks(inProgressDir);
-                // if (unlockFolders.length > 0) {
-                //     this.logger.info(`Found ${unlockFolders.length} unlocked folders to process`);
-                //     await this.resumeProcessing(unlockFolders[0]);
-                //     continue;
-                // }
 
                 // 2. Основная обработка: ищем папки в unprocessed, где есть base_0.png и json
                 const unprocessedFolders = await this.fileService.getUnprocessedFolders();
@@ -66,12 +49,45 @@ export class ContentGenerationWorker {
                         candidateFolders.push(folder);
                     }
                 }
-                if (candidateFolders.length === 0) {
+
+                // 3. Обработка нового типа папок: ищем папки с JSON и изображениями scene_*.png
+                const newFormatCandidateFolders: string[] = [];
+                for (const folder of unprocessedFolders) {
+                    const files = await fs.readdir(folder);
+                    const hasJson = files.some(f => f.endsWith(".json"));
+                    const hasSceneImages = files.some(f => f.match(/^scene_\d+\.png$/));
+                    if (hasJson && hasSceneImages) {
+                        newFormatCandidateFolders.push(folder);
+                    }
+                }
+
+                // Приоритет: сначала обрабатываем новый формат, потом старый
+                if (newFormatCandidateFolders.length > 0) {
+                    const folderName = path.basename(newFormatCandidateFolders[0]);
+                    const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
+                    
+                    try {
+                        await fs.move(newFormatCandidateFolders[0], inProgressPath, { overwrite: true });
+                        await this.processNewFormatFolder(inProgressPath);
+                    } catch (error) {
+                        this.logger.error(`Error processing new format folder ${inProgressPath}:`, error);
+                        // Если произошла ошибка, попробуем вернуть папку обратно в unprocessed
+                        try {
+                            if (await fs.pathExists(inProgressPath)) {
+                                await fs.move(inProgressPath, newFormatCandidateFolders[0], { overwrite: true });
+                            }
+                        } catch (moveError) {
+                            this.logger.error(`Failed to move folder back to unprocessed:`, moveError);
+                        }
+                    }
+                    continue;
+                } else if (candidateFolders.length === 0) {
                     // this.logger.info('No folders to process, waiting...');
                     const jitter = Math.floor(Math.random() * 5000);
                     await sleep(25000 + jitter);
                     continue;
                 }
+
                 // Переносим папку из unprocessed в in-progress
                 const folderName = path.basename(candidateFolders[0]);
                 const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
@@ -92,6 +108,7 @@ export class ContentGenerationWorker {
 
     private async resumeProcessing(folderPath: string): Promise<void> {
         this.activeProcesses++;
+        let lockReleased = false;
         try {
             this.logger.info(`Attempting to resume processing for folder: ${folderPath}`);
 
@@ -112,7 +129,14 @@ export class ContentGenerationWorker {
                 // Check if folder is in cooldown period
                 if (await this.stateService.isInCooldown(folderPath)) {
                     this.logger.info(`Folder ${folderPath} is in cooldown period, skipping`);
-                    await this.lockService.releaseLock(folderPath);
+                    try {
+                        if (lockAcquired && !lockReleased) {
+                            await this.lockService.releaseLock(folderPath);
+                            lockReleased = true;
+                        }
+                    } catch (lockError) {
+                        this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                    }
                     return;
                 }
 
@@ -127,7 +151,14 @@ export class ContentGenerationWorker {
                 this.logger.warn(`Max retries exceeded for ${folderPath}, marking as failed with ${cooldownTime/1000}s cooldown`);
                 await this.stateService.markFailed(folderPath, "Max retries exceeded", cooldownTime);
                 await this.fileService.moveFailedFolder(path.basename(folderPath));
-                await this.lockService.releaseLock(folderPath);
+                try {
+                    if (lockAcquired && !lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
                 return;
             }
 
@@ -137,31 +168,56 @@ export class ContentGenerationWorker {
                 this.logger.error(`No JSON file found in ${folderPath}`);
                 await this.stateService.markFailed(folderPath, "No JSON file found");
                 await this.fileService.moveFailedFolder(path.basename(folderPath));
-                await this.lockService.releaseLock(folderPath);
+                try {
+                    if (lockAcquired && !lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
                 return;
             }
 
             // Read the JSON file
             const jsonFilePath = path.join(folderPath, jsonFile);
-            let data: GenerationData;
+            let data: any;
 
             try {
-                data = await this.fileService.readFile(jsonFilePath) as GenerationData;
+                data = await this.fileService.readFile(jsonFilePath);
 
-                // Validate the data structure
-                if (!data.enhancedMedia || !Array.isArray(data.enhancedMedia) || data.enhancedMedia.length === 0) {
-                    throw new Error("Invalid or empty enhancedMedia array in JSON file");
+                // Определяем формат и перенаправляем на соответствующую обработку
+                if (data.video_prompts && Array.isArray(data.video_prompts) && data.video_prompts.length > 0) {
+                    // Новый формат с video_prompts - обрабатываем как NewFormatWithVideo
+                    this.logger.info(`Detected new format with video_prompts in ${folderPath}, processing as NewFormatWithVideo`);
+                    await this.processNewFormatFolder(folderPath);
+                    return;
+                } else if (data.enhancedMedia && Array.isArray(data.enhancedMedia) && data.enhancedMedia.length > 0) {
+                    // Старый формат с enhancedMedia - продолжаем как раньше
+                    this.logger.info(`Detected old format with enhancedMedia in ${folderPath}, processing as OldFormat`);
+                } else {
+                    throw new Error("Unknown format: neither video_prompts nor enhancedMedia found");
                 }
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : "Error reading or parsing JSON file";
                 this.logger.error(`${errorMessage} in ${folderPath}`);
                 await this.stateService.markFailed(folderPath, errorMessage);
                 await this.fileService.moveFailedFolder(path.basename(folderPath));
-                await this.lockService.releaseLock(folderPath);
+                try {
+                    if (lockAcquired && !lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
                 return;
             }
 
-            const numericScenes = data.enhancedMedia
+            // Продолжаем обработку старого формата
+            const generationData = data as GenerationData;
+
+            const numericScenes = generationData.enhancedMedia
                 .filter((media) => typeof media.scene === "number")
                 .sort((a, b) => (a.scene as number) - (b.scene as number));
 
@@ -170,7 +226,14 @@ export class ContentGenerationWorker {
                 this.logger.error(`No numeric scenes found in ${folderPath}`);
                 await this.stateService.markFailed(folderPath, "No numeric scenes found in JSON file");
                 await this.fileService.moveFailedFolder(path.basename(folderPath));
-                await this.lockService.releaseLock(folderPath);
+                try {
+                    if (lockAcquired && !lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
                 return;
             }
 
@@ -180,12 +243,19 @@ export class ContentGenerationWorker {
                 this.logger.error(`No scene 0 found in ${folderPath}`);
                 await this.stateService.markFailed(folderPath, "No scene 0 found in JSON file");
                 await this.fileService.moveFailedFolder(path.basename(folderPath));
-                await this.lockService.releaseLock(folderPath);
+                try {
+                    if (lockAcquired && !lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
                 return;
             }
 
             // Find the final scene if it exists
-            const finalScene = data.enhancedMedia.find((media) => media.scene === "final");
+            const finalScene = generationData.enhancedMedia.find((media) => media.scene === "final");
 
             // Determine which scenes have been completed
             const completedScenes = state.completedScenes || [];
@@ -196,7 +266,14 @@ export class ContentGenerationWorker {
             await this.processScenes(folderPath, numericScenes, finalScene, completedScenes);
 
             await this.stateService.markCompleted(folderPath);
-            await this.lockService.releaseLock(folderPath);
+            try {
+                if (lockAcquired && !lockReleased) {
+                    await this.lockService.releaseLock(folderPath);
+                    lockReleased = true;
+                }
+            } catch (lockError) {
+                this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+            }
             await this.fileService.moveProcessedFolder(path.basename(folderPath));
 
             this.logger.info(`Successfully resumed and completed processing for ${folderPath}`);
@@ -206,7 +283,14 @@ export class ContentGenerationWorker {
                 const errorMessage = error instanceof Error ? error.message : "Unknown error";
                 await this.stateService.markFailed(folderPath, errorMessage);
                 await this.fileService.moveFailedFolder(path.basename(folderPath));
-                await this.lockService.releaseLock(folderPath);
+                try {
+                    if (!lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
             } catch (stateError) {
                 this.logger.error(`Error updating state for ${folderPath}`, stateError);
             }
@@ -252,20 +336,26 @@ export class ContentGenerationWorker {
             if (!await fs.pathExists(firstBaseImagePath)) {
                 this.logger.info(`Generating base image for scene ${firstSceneNumber}`);
                 await this.appendWorkerLog(folderPath, `Generating base image for scene ${firstSceneNumber}`);
-                const imageResult = await this.imageService.generateImage(firstScene.image_prompt, firstBaseImagePath);
-                // Save image meta to meta.json
-                const metaPath = path.join(folderPath, 'meta.json');
-                let metaArr = [];
-                if (await fs.pathExists(metaPath)) {
-                    metaArr = await fs.readJson(metaPath);
+                try {
+                    const imageResult = await this.imageService.generateImage(firstScene.image_prompt, firstBaseImagePath);
+                    // Save image meta to meta.json
+                    const metaPath = path.join(folderPath, 'meta.json');
+                    let metaArr = [];
+                    if (await fs.pathExists(metaPath)) {
+                        metaArr = await fs.readJson(metaPath);
+                    }
+                    let sceneMeta = metaArr.find((m: any) => m.scene === firstSceneNumber);
+                    if (!sceneMeta) {
+                        sceneMeta = { scene: firstSceneNumber };
+                        metaArr.push(sceneMeta);
+                    }
+                    sceneMeta.image = imageResult;
+                    await fs.writeJson(metaPath, metaArr, { spaces: 2 });
+                } catch (error) {
+                    this.logger.error(`Failed to generate base image for scene ${firstSceneNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    await this.appendWorkerLog(folderPath, `Failed to generate base image for scene ${firstSceneNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    throw new Error(`Failed to generate base image for scene ${firstSceneNumber}`);
                 }
-                let sceneMeta = metaArr.find((m: any) => m.scene === firstSceneNumber);
-                if (!sceneMeta) {
-                    sceneMeta = { scene: firstSceneNumber };
-                    metaArr.push(sceneMeta);
-                }
-                sceneMeta.image = imageResult;
-                await fs.writeJson(metaPath, metaArr, { spaces: 2 });
             }
 
             // Check if video exists, if not generate it
@@ -503,6 +593,268 @@ export class ContentGenerationWorker {
             await this.stateService.markSceneCompleted(folderPath, -1); // Use -1 to represent the final scene
             this.logger.info(`Final scene processing completed for ${folderPath}`);
             await this.appendWorkerLog(folderPath, `Final scene processing completed for ${folderPath}`);
+        }
+    }
+
+    /**
+     * Process a new format folder with JSON and scene images
+     */
+    private async processNewFormatFolder(folderPath: string): Promise<void> {
+        this.activeProcesses++;
+        let lockReleased = false;
+        try {
+            this.logger.info(`Processing new format folder: ${folderPath}`);
+
+            const lockAcquired = await this.lockService.acquireLock(folderPath);
+            if (!lockAcquired) {
+                this.logger.info(`Could not acquire lock for ${folderPath}, skipping`);
+                return;
+            }
+
+            this.logger.info(`Lock acquired for ${folderPath}, initializing state`);
+
+            const state = await this.stateService.initializeState(
+                folderPath,
+                this.lockService.getWorkerId(),
+                this.maxRetries
+            );
+
+            // Check if max retries exceeded
+            if (await this.stateService.hasExceededMaxRetries(folderPath)) {
+                if (await this.stateService.isInCooldown(folderPath)) {
+                    this.logger.info(`Folder ${folderPath} is in cooldown period, skipping`);
+                    try {
+                        if (lockAcquired && !lockReleased) {
+                            await this.lockService.releaseLock(folderPath);
+                            lockReleased = true;
+                        }
+                    } catch (lockError) {
+                        this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                    }
+                    return;
+                }
+
+                const failedAttempts = state.failedAttempts || 0;
+                const baseDelay = 60000;
+                const maxDelay = 3600000;
+                const cooldownTime = Math.min(baseDelay * Math.pow(2, failedAttempts), maxDelay);
+
+                this.logger.warn(`Max retries exceeded for ${folderPath}, marking as failed with ${cooldownTime/1000}s cooldown`);
+                await this.stateService.markFailed(folderPath, "Max retries exceeded", cooldownTime);
+                await this.fileService.moveFailedFolder(path.basename(folderPath));
+                try {
+                    if (lockAcquired && !lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
+                return;
+            }
+
+            // Read JSON file
+            const files = await fs.readdir(folderPath);
+            const jsonFile = files.find((file) => file.endsWith(".json"));
+            if (!jsonFile) {
+                this.logger.error(`No JSON file found in ${folderPath}`);
+                await this.stateService.markFailed(folderPath, "No JSON file found");
+                await this.fileService.moveFailedFolder(path.basename(folderPath));
+                try {
+                    if (lockAcquired && !lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
+                return;
+            }
+
+            const jsonFilePath = path.join(folderPath, jsonFile);
+            let data: any;
+
+            try {
+                data = await this.fileService.readFile(jsonFilePath);
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : "Error reading or parsing JSON file";
+                this.logger.error(`${errorMessage} in ${folderPath}`);
+                await this.stateService.markFailed(folderPath, errorMessage);
+                await this.fileService.moveFailedFolder(path.basename(folderPath));
+                try {
+                    if (lockAcquired && !lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
+                return;
+            }
+
+            // Validate new format with video prompts
+            if (!data.video_prompts || !Array.isArray(data.video_prompts) || data.video_prompts.length === 0) {
+                this.logger.error(`No video_prompts found in ${folderPath}`);
+                await this.stateService.markFailed(folderPath, "No video_prompts found in JSON file");
+                await this.fileService.moveFailedFolder(path.basename(folderPath));
+                try {
+                    if (lockAcquired && !lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
+                return;
+            }
+
+            // Get scene images
+            const sceneImages = files.filter(file => file.match(/^scene_\d+\.png$/));
+            if (data.video_prompts.length !== sceneImages.length) {
+                this.logger.error(`Mismatch between video_prompts count (${data.video_prompts.length}) and scene images count (${sceneImages.length}) in ${folderPath}`);
+                await this.stateService.markFailed(folderPath, "Mismatch between video_prompts and scene images count");
+                await this.fileService.moveFailedFolder(path.basename(folderPath));
+                try {
+                    if (lockAcquired && !lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
+                return;
+            }
+
+            this.logger.info(`Found ${data.video_prompts.length} video prompts and ${sceneImages.length} scene images in ${folderPath}`);
+
+            // Process videos in batches of 4
+            const batchSize = 4;
+            const totalVideos = data.video_prompts.length;
+            
+            this.logger.info(`Starting batch video generation: ${totalVideos} videos in batches of ${batchSize}`);
+            await this.appendWorkerLog(folderPath, `Starting batch video generation: ${totalVideos} videos in batches of ${batchSize}`);
+            
+            for (let batchStart = 0; batchStart < totalVideos; batchStart += batchSize) {
+                const batchEnd = Math.min(batchStart + batchSize, totalVideos);
+                const currentBatch = batchEnd - batchStart;
+                
+                this.logger.info(`Processing batch ${Math.floor(batchStart / batchSize) + 1}: scenes ${batchStart} to ${batchEnd - 1} (${currentBatch} videos)`);
+                await this.appendWorkerLog(folderPath, `Processing batch ${Math.floor(batchStart / batchSize) + 1}: scenes ${batchStart} to ${batchEnd - 1} (${currentBatch} videos)`);
+                
+                const videoPromises = [];
+                
+                for (let i = batchStart; i < batchEnd; i++) {
+                    const videoPrompt = data.video_prompts[i];
+                    const imagePath = path.join(folderPath, `scene_${i}.png`);
+                    const videoPath = path.join(folderPath, `scene_${i}.mp4`);
+
+                    // Check if image exists
+                    if (!await fs.pathExists(imagePath)) {
+                        this.logger.error(`Image file not found: ${imagePath}`);
+                        await this.appendWorkerLog(folderPath, `Image file not found: ${imagePath}`);
+                        throw new Error(`Image file not found: ${imagePath}`);
+                    }
+
+                    // Check if video already exists
+                    if (await fs.pathExists(videoPath)) {
+                        this.logger.info(`Video already exists for scene ${i}, skipping`);
+                        await this.appendWorkerLog(folderPath, `Video already exists for scene ${i}, skipping`);
+                        continue;
+                    }
+
+                    this.logger.info(`Adding scene ${i} to batch for video generation`);
+                    await this.appendWorkerLog(folderPath, `Adding scene ${i} to batch for video generation`);
+                    
+                    const videoPromise = this.videoService.generateVideo(
+                        videoPrompt.video_prompt,
+                        imagePath,
+                        videoPath,
+                        6 // duration
+                    ).then(async (videoResult) => {
+                        // Save video meta to meta.json
+                        const metaPath = path.join(folderPath, 'meta.json');
+                        let metaArr = [];
+                        if (await fs.pathExists(metaPath)) {
+                            metaArr = await fs.readJson(metaPath);
+                        }
+                        let sceneMeta = metaArr.find((m: any) => m.scene === i);
+                        if (!sceneMeta) {
+                            sceneMeta = { scene: i };
+                            metaArr.push(sceneMeta);
+                        }
+                        sceneMeta.video = videoResult;
+                        await fs.writeJson(metaPath, metaArr, { spaces: 2 });
+
+                        this.logger.info(`Successfully generated video for scene ${i}`);
+                        await this.appendWorkerLog(folderPath, `Successfully generated video for scene ${i}`);
+                        return { index: i, success: true };
+                    }).catch(async (error) => {
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                        this.logger.error(`Failed to generate video for scene ${i}: ${errorMessage}`);
+                        await this.appendWorkerLog(folderPath, `Failed to generate video for scene ${i}: ${errorMessage}`);
+                        return { index: i, success: false, error: errorMessage };
+                    });
+                    
+                    videoPromises.push(videoPromise);
+                }
+                
+                // Wait for current batch to complete
+                if (videoPromises.length > 0) {
+                    const batchResults = await Promise.all(videoPromises);
+                    
+                    // Log batch results
+                    const successfulCount = batchResults.filter(r => r.success).length;
+                    this.logger.info(`Batch ${Math.floor(batchStart / batchSize) + 1} completed: ${successfulCount}/${currentBatch} videos generated successfully`);
+                    await this.appendWorkerLog(folderPath, `Batch ${Math.floor(batchStart / batchSize) + 1} completed: ${successfulCount}/${currentBatch} videos generated successfully`);
+                    
+                    // Check for failed generations
+                    const failedResults = batchResults.filter(r => !r.success) as Array<{ index: number; success: boolean; error: string }>;
+                    if (failedResults.length > 0) {
+                        this.logger.warn(`Some videos failed in batch ${Math.floor(batchStart / batchSize) + 1}:`);
+                        await this.appendWorkerLog(folderPath, `Some videos failed in batch ${Math.floor(batchStart / batchSize) + 1}:`);
+                        failedResults.forEach(result => {
+                            this.logger.warn(`  Scene ${result.index}: ❌ Failed - ${result.error}`);
+                        });
+                        
+                        // If any video in the batch failed, throw an error to stop processing
+                        throw new Error(`Batch ${Math.floor(batchStart / batchSize) + 1} failed: ${failedResults.length} videos failed`);
+                    }
+                }
+            }
+
+            this.logger.info(`All videos generated successfully for ${folderPath}, marking as completed`);
+            await this.stateService.markCompleted(folderPath);
+            try {
+                if (lockAcquired && !lockReleased) {
+                    await this.lockService.releaseLock(folderPath);
+                    lockReleased = true;
+                    this.logger.info(`Lock released for ${folderPath}`);
+                }
+            } catch (lockError) {
+                this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+            }
+            await this.fileService.moveProcessedFolder(path.basename(folderPath));
+
+            this.logger.info(`Successfully processed new format folder: ${folderPath}`);
+        } catch (error: unknown) {
+            this.logger.error(`Error processing new format folder: ${folderPath}`, error);
+            try {
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                await this.stateService.markFailed(folderPath, errorMessage);
+                await this.fileService.moveFailedFolder(path.basename(folderPath));
+                try {
+                    if (!lockReleased) {
+                        await this.lockService.releaseLock(folderPath);
+                        lockReleased = true;
+                    }
+                } catch (lockError) {
+                    this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+                }
+            } catch (stateError) {
+                this.logger.error(`Error updating state for ${folderPath}`, stateError);
+            }
+        } finally {
+            this.activeProcesses--;
         }
     }
 
