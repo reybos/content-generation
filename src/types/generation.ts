@@ -83,6 +83,22 @@ export const NewFormatWithVideoDataSchema = z.object({
 });
 export type NewFormatWithVideoData = z.infer<typeof NewFormatWithVideoDataSchema>;
 
+// New format with arrays for titles, descriptions, and hashtags
+export const NewFormatWithArraysDataSchema = z.object({
+    global_style: z.string(),
+    prompts: z.array(PromptSchema),
+    video_prompts: z.array(VideoPromptSchema),
+    titles: z.array(z.string()),
+    descriptions: z.array(z.string()),
+    hashtags: z.array(z.string())
+});
+export type NewFormatWithArraysData = z.infer<typeof NewFormatWithArraysDataSchema>;
+
 // Union type for all formats
-export const ContentDataSchema = z.union([GenerationDataSchema, NewFormatDataSchema, NewFormatWithVideoDataSchema]);
+export const ContentDataSchema = z.union([
+    GenerationDataSchema, 
+    NewFormatDataSchema, 
+    NewFormatWithVideoDataSchema,
+    NewFormatWithArraysDataSchema
+]);
 export type ContentData = z.infer<typeof ContentDataSchema>;

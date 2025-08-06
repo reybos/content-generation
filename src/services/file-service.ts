@@ -3,6 +3,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { GenerationData, NewFormatData, ContentData } from '../types';
+import { LockService } from './lock-service';
 
 // Helper to resolve the generations base directory
 function resolveGenerationsBaseDir(): string {
@@ -27,6 +28,7 @@ export class FileService {
     private inProgressDir: string;
     private processedDir: string;
     private failedDir: string;
+    private lockService: LockService;
 
     constructor() {
         this.baseDir = resolveGenerationsBaseDir();
@@ -34,6 +36,7 @@ export class FileService {
         this.inProgressDir = path.join(this.baseDir, 'in-progress');
         this.processedDir = path.join(this.baseDir, 'processed');
         this.failedDir = path.join(this.baseDir, 'failed');
+        this.lockService = new LockService();
     }
 
     public getUnprocessedDir(): string {
@@ -111,16 +114,25 @@ export class FileService {
         const destPath: string = path.join(this.processedDir, path.basename(folderName));
         try {
             await fs.ensureDir(this.processedDir);
+            
+            // Удаляем .lock файл перед перемещением папки
+            await this.lockService.forceRemoveLock(sourcePath);
+            
             await fs.move(sourcePath, destPath, { overwrite: true });
         } catch (error) {
             throw new Error(`Failed to move folder from ${sourcePath} to ${destPath}: ${error}`);
         }
     }
+    
     public async moveFailedFolder(folderName: string): Promise<void> {
         const sourcePath = path.join(this.inProgressDir, path.basename(folderName));
         const destPath = path.join(this.failedDir, path.basename(folderName));
         try {
             await fs.ensureDir(this.failedDir);
+            
+            // Удаляем .lock файл перед перемещением папки
+            await this.lockService.forceRemoveLock(sourcePath);
+            
             await fs.move(sourcePath, destPath, { overwrite: true});
         } catch (error) {
             throw new Error(`Failed to move folder from ${sourcePath} to ${destPath}: ${error}`);

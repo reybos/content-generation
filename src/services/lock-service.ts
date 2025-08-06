@@ -87,6 +87,23 @@ export class LockService {
         }
     }
 
+    /**
+     * Force remove lock file without checking ownership
+     * Useful when moving folders between directories
+     */
+    public async forceRemoveLock(folderPath: string): Promise<void> {
+        const lockFilePath = path.join(folderPath, '.lock');
+
+        try {
+            if (await fs.pathExists(lockFilePath)) {
+                await fs.remove(lockFilePath);
+                this.logger.info(`Force removed lock for ${folderPath}`);
+            }
+        } catch (error) {
+            this.logger.error(`Failed to force remove lock for ${folderPath}`, error);
+        }
+    }
+
     public async isLocked(folderPath: string): Promise<boolean> {
         const lockFilePath = path.join(folderPath, '.lock');
         
