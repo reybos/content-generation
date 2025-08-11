@@ -4,7 +4,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
-import { Logger } from '../utils';
+import { Logger } from '../../utils';
 
 /**
  * Interface for lock file content

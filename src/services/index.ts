@@ -1,6 +1,12 @@
-export { FileService } from './file-service';
-export * from './image-service';
-export * from './video-service';
-export * from './lock-service';
-export * from './state-service';
-export { UniversalWorker } from './universal-worker';
+// Core services
+export { FileService } from './core/file-service';
+export * from './core/lock-service';
+export * from './core/state-service';
+
+// Generator services  
+export * from './generators/image-service';
+export * from './generators/video-service';
+
+// Worker services
+export { UniversalWorker } from './workers/universal-worker';
+export { VideoWorker } from './workers/video-worker';

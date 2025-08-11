@@ -30,7 +30,7 @@ async function main(): Promise<void> {
 
     try {
         // Number of worker instances to create
-        const workerCount = 10;
+        const workerCount = 1;
         logger.info(`Initializing ${workerCount} content generation workers`);
 
         // Create multiple worker instances

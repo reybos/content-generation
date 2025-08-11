@@ -1,135 +1,192 @@
-# Content Generation Worker
+# Content Generation System
 
-A Node.js/TypeScript application that processes JSON files to generate multimedia content using the [fal.ai](https://fal.ai) API.
+Система для автоматической генерации изображений и видео на основе JSON-конфигураций.
 
-## Installation
+## 🏗️ Архитектура
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd content-generation-worker
-   ```
+Система построена на принципе разделения ответственностей:
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+- **UniversalWorker** - генерация изображений из JSON файлов
+- **VideoWorker** - генерация видео из папок с изображениями
+- **ContentGenerationWorker** - координация workflow между воркерами
 
-3. Build the application:
-   ```bash
-   npm run build
-   ```
-   
-4. Install 
-   ```bash
-   brew install ffmpeg
-   ```
+## 🚀 Быстрый старт
 
-## Configuration
-
-The application uses the `dotenv` library to automatically load environment variables from a `.env` file.
-
-### Required Environment Variables
-
-- `FAL_KEY`: Your fal.ai API key for image generation
-
-### Optional Environment Variables
-
-- `MOCK_API`: Set to `'true'` to run in mock mode without making actual API calls
-- `DEBUG`: Set to `'true'` to enable debug logging
-- `GENERATIONS_DIR_PATH`: **Absolute path** to the generations directory (overrides relative)
-- `GENERATIONS_DIR_RELATIVE_PATH`: **Relative path** from the project root to the generations directory (used if absolute is not set)
-
-#### Generations Directory Configuration
-
-You can control where the generations folder is located:
-
-- **Option 1: Absolute path**
-  ```env
-  GENERATIONS_DIR_PATH=/absolute/path/to/generations
-  ```
-- **Option 2: Relative path from the project root**
-  ```env
-  GENERATIONS_DIR_RELATIVE_PATH=../generations
-  ```
-- If neither is set, the default is `generations` inside the project root.
-
-### Option 1: Set in Shell
-
+### Установка зависимостей
 ```bash
-export FAL_KEY="your-fal-ai-api-key"
-export MOCK_API="true"     # Optional
-export DEBUG="true"        # Optional
-export GENERATIONS_DIR_PATH="/absolute/path/to/generations" # Optional
+npm install
 ```
 
-### Option 2: Use `.env` File (Recommended)
-
-Create a `.env` file in the root directory of the project:
-
-```env
-FAL_KEY=your-fal-ai-api-key
-MOCK_API=true
-DEBUG=true
-# GENERATIONS_DIR_PATH=/absolute/path/to/generations
-# GENERATIONS_DIR_RELATIVE_PATH=../generations
+### Запуск полного workflow
+```bash
+npm run start
 ```
 
-> ✅ This method is recommended for local development as it keeps your API key out of your shell history.
+### Запуск только генерации изображений
+```typescript
+import { UniversalWorker } from './src/services';
+const imageWorker = new UniversalWorker();
+await imageWorker.start();
+```
 
-## Usage
+### Запуск только генерации видео
+```typescript
+import { VideoWorker } from './src/services';
+const videoWorker = new VideoWorker();
+await videoWorker.start();
+```
 
-1. Place your JSON files in the `generations/unprocessed/` directory (or your configured directory).
-2. Run the application:
-   ```bash
-   npm start
-   ```
-3. The app will process the files and:
-   - Move them to the `generations/in-progress/` directory
-   - Save generated content in the same folder as the original JSON
+## 📁 Структура проекта
 
-## JSON File Format
+```
+src/
+├── services/
+│   ├── index.ts                    # Главный экспорт всех сервисов
+│   ├── workers/                    # Воркеры (основная логика)
+│   │   ├── universal-worker.ts     # Генерация изображений
+│   │   └── video-worker.ts         # Генерация видео
+│   ├── core/                       # Базовые сервисы
+│   │   ├── file-service.ts         # Работа с файлами
+│   │   ├── lock-service.ts         # Система блокировок
+│   │   └── state-service.ts        # Управление состоянием
+│   └── generators/                 # Сервисы генерации
+│       ├── image-service.ts        # Генерация изображений
+│       └── video-service.ts        # Генерация видео
+├── types/                          # TypeScript типы
+├── utils/                          # Утилиты
+├── worker.ts                       # Главный координатор
+├── test-structure.ts               # Тесты структуры
+└── documentation/                  # Документация
+```
 
-Each JSON file should follow this structure:
+### 🏗️ Логика организации services/
 
+- **`workers/`** - содержит основную бизнес-логику (воркеры)
+- **`core/`** - содержит базовые сервисы, используемые всеми остальными
+- **`generators/** - содержит сервисы для генерации контента
+- **`index.ts`** - централизованный экспорт всех сервисов
+
+## 🔄 Workflow
+
+1. **JSON файлы** помещаются в папку `unprocessed/`
+2. **UniversalWorker** читает JSON и генерирует изображения
+3. **Папки с изображениями** перемещаются в `processed/`
+4. **VideoWorker** находит папки с изображениями и генерирует видео
+5. **Готовые папки** перемещаются в `processed/`
+
+## 📊 Поддерживаемые форматы
+
+### Новый формат (NewFormatWithArrays)
 ```json
 {
-  "script": {
-    "introduction": "Introduction text",
-    "finale": "Finale text",
-    "scenes": [
-      {
-        "title": "Scene Title",
-        "description": "Scene Description",
-        "narration": "Scene Narration"
-      }
-    ]
-  },
-  "character": {
-    "character_type": "Character Type",
-    "name": "Character Name",
-    "appearance": "Character Appearance",
-    "personality": "Character Personality",
-    "gestures": "Character Gestures",
-    "outfit": "Character Outfit",
-    "background": "Character Background"
-  },
-  "enhancedMedia": [
-    {
-      "scene": 0,
-      "scene_type": "introduction",
-      "image_prompt": "Image prompt for scene 0",
-      "video_prompt": "Video prompt for scene 0"
-    }
+  "global_style": "cartoon style",
+  "prompts": [
+    {"prompt": "A cat saying hello"},
+    {"prompt": "A dog saying goodbye"}
   ],
-  "music": "Music description",
-  "titleDesc": "Title description",
-  "hashtags": "Hashtags"
+  "video_prompts": [
+    {"video_prompt": "Cat animation"},
+    {"video_prompt": "Dog animation"}
+  ],
+  "titles": ["Cat Video", "Dog Video"],
+  "descriptions": ["Funny cat", "Funny dog"],
+  "hashtags": ["#cat", "#dog"]
 }
 ```
 
----
+### Старый формат (GenerationData)
+```json
+{
+  "script": "Story script",
+  "narration": "Narration text",
+  "enhancedMedia": [
+    {
+      "scene": 0,
+      "image_prompt": "A cat",
+      "video_prompt": "Cat animation",
+      "duration": 6
+    }
+  ]
+}
+```
 
-## License
+## ⚙️ Конфигурация
 
-MIT
+### Переменные окружения
+```bash
+# Пути к папкам
+UNPROCESSED_DIR=./unprocessed
+IN_PROGRESS_DIR=./in-progress
+PROCESSED_DIR=./processed
+FAILED_DIR=./failed
+
+# Настройки воркеров
+MAX_RETRIES=5
+BATCH_SIZE=4
+```
+
+## 🧪 Тестирование
+
+### Запуск тестов архитектуры
+```bash
+npx ts-node src/test-architecture.ts
+```
+
+### Проверка работоспособности
+```bash
+# Тест генерации изображений
+npx ts-node src/example-usage.ts
+
+# Выберите нужный режим в файле
+```
+
+## 📈 Мониторинг
+
+Система ведет логи в следующих местах:
+- Консоль (основные события)
+- `worker.log` в каждой папке (детальные логи)
+- `meta.json` в каждой папке (мета-информация)
+
+## 🔧 Разработка
+
+### Добавление нового формата
+1. Создайте новый тип в `src/types/`
+2. Добавьте логику определения формата в `UniversalWorker`
+3. Реализуйте обработку в соответствующем методе
+
+### Добавление нового воркера
+1. Создайте класс в `src/services/`
+2. Добавьте экспорт в `src/services/index.ts`
+3. Интегрируйте в `ContentGenerationWorker`
+
+## 🚨 Устранение неполадок
+
+### Частые проблемы
+- **Файлы не обрабатываются**: Проверьте права доступа к папкам
+- **Ошибки генерации**: Проверьте логи в `worker.log`
+- **Блокировки**: Удалите файлы `.lock` в папках
+
+### Логи
+```bash
+# Просмотр логов воркера
+tail -f unprocessed/folder_name/worker.log
+
+# Просмотр системных логов
+tail -f logs/system.log
+```
+
+## 📚 Документация
+
+- [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md) - Детальное описание рефакторинга
+- [documentation/](documentation/) - Техническая документация
+
+## 🤝 Вклад в проект
+
+1. Форкните репозиторий
+2. Создайте ветку для новой функции
+3. Внесите изменения
+4. Создайте Pull Request
+
+## 📄 Лицензия
+
+MIT License - см. файл [LICENSE](LICENSE) для деталей.

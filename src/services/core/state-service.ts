@@ -2,7 +2,7 @@
 
 import fs from 'fs-extra';
 import path from 'path';
-import { Logger } from '../utils';
+import { Logger } from '../../utils';
 
 /**
  * Processing stage enum

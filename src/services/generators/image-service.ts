@@ -3,7 +3,7 @@
 import { fal } from '@fal-ai/client';
 import fs from 'fs-extra';
 import path from 'path';
-import { Logger } from '../utils';
+import { Logger } from '../../utils';
 
 interface ImageGenerationStatus {
     requestId: string;

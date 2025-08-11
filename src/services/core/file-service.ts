@@ -2,7 +2,7 @@
 
 import fs from 'fs-extra';
 import path from 'path';
-import { GenerationData, NewFormatData, ContentData } from '../types';
+import { GenerationData, NewFormatData, ContentData } from '../../types';
 import { LockService } from './lock-service';
 
 // Helper to resolve the generations base directory

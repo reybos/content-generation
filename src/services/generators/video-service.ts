@@ -2,7 +2,7 @@ import { fal } from "@fal-ai/client";
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { Logger } from '../utils';
+import { Logger } from '../../utils';
 
 /**
  * Interface for video generation request status
