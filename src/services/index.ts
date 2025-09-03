@@ -8,5 +8,5 @@ export * from './generators/image-service';
 export * from './generators/video-service';
 
 // Worker services
-export { UniversalWorker } from './workers/universal-worker';
+export { ImageWorker } from './workers/image-worker';
 export { VideoWorker } from './workers/video-worker';

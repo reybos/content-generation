@@ -2,7 +2,7 @@ import { FileService } from '../core/file-service';
 import { LockService } from '../core/lock-service';
 import { StateService } from '../core/state-service';
 import { VideoService } from '../generators/video-service';
-import { Logger } from '../../utils';
+import { Logger, isSingleVideoFormat, isSongWithAnimalWithVideoPrompts, isStudyWithEnhancedMedia } from '../../utils';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 
@@ -19,27 +19,36 @@ export class VideoWorker {
         
         while (true) {
             try {
-                // Ищем папки в unprocessed для обработки видео
+                // Ищем папки в unprocessed для обработки видео (существующие форматы)
                 const unprocessedFolders = await this.fileService.getUnprocessedFolders();
                 
-                // 1. Приоритет: новый формат с scene_*.png изображениями
-                const newFormatFolders = this.findNewFormatFolders(unprocessedFolders);
-                if (newFormatFolders.length > 0) {
-                    this.logger.info(`Found ${newFormatFolders.length} new format folders for video generation`);
-                    await this.processNewFormatFolder(newFormatFolders[0]);
+                // 1. Приоритет: формат песни с животными с scene_*.png изображениями
+                const songWithAnimalFolders = this.findSongWithAnimalFolders(unprocessedFolders);
+                if (songWithAnimalFolders.length > 0) {
+                    this.logger.info(`Found ${songWithAnimalFolders.length} song with animal folders for video generation`);
+                    await this.processSongWithAnimalFolder(songWithAnimalFolders[0]);
                     continue;
                 }
 
-                // 2. Старый формат с base_0.png
-                const oldFormatFolders = this.findOldFormatFolders(unprocessedFolders);
-                if (oldFormatFolders.length > 0) {
-                    this.logger.info(`Found ${oldFormatFolders.length} old format folders for video generation`);
-                    await this.processOldFormatFolder(oldFormatFolders[0]);
+                // 2. Формат обучения с base_0.png
+                const studyFolders = this.findStudyFolders(unprocessedFolders);
+                if (studyFolders.length > 0) {
+                    this.logger.info(`Found ${studyFolders.length} study format folders for video generation`);
+                    await this.processStudyFolder(studyFolders[0]);
                     continue;
                 }
 
-                // Нет папок для обработки, ждем
-                this.logger.info('No folders to process, waiting...');
+                // 3. Новый формат с одним видео - ищем JSON файлы в unprocessed
+                const unprocessedFiles = await this.fileService.getUnprocessedFiles();
+                const studyShortsFiles = this.findStudyShorts(unprocessedFiles);
+                if (studyShortsFiles.length > 0) {
+                    this.logger.info(`Found ${studyShortsFiles.length} study shorts format files for video generation`);
+                    await this.processSingleVideoFile(studyShortsFiles[0]);
+                    continue;
+                }
+
+                // Нет файлов или папок для обработки, ждем
+                this.logger.info('No files or folders to process, waiting...');
                 await this.sleep(25000 + Math.floor(Math.random() * 5000));
             } catch (error) {
                 this.logger.error("Error in video worker loop", error);
@@ -48,7 +57,7 @@ export class VideoWorker {
         }
     }
 
-    private findNewFormatFolders(folders: string[]): string[] {
+    private findSongWithAnimalFolders(folders: string[]): string[] {
         return folders.filter(folder => {
             try {
                 const files = fs.readdirSync(folder);
@@ -61,7 +70,7 @@ export class VideoWorker {
         });
     }
 
-    private findOldFormatFolders(folders: string[]): string[] {
+    private findStudyFolders(folders: string[]): string[] {
         return folders.filter(folder => {
             try {
                 const files = fs.readdirSync(folder);
@@ -74,23 +83,37 @@ export class VideoWorker {
         });
     }
 
-    private async processNewFormatFolder(folderPath: string): Promise<void> {
+    private findStudyShorts(files: string[]): string[] {
+        return files.filter(filePath => {
+            try {
+                // Читаем JSON файл для проверки структуры
+                const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                
+                // Проверяем структуру нового формата
+                return isSingleVideoFormat(data);
+            } catch {
+                return false;
+            }
+        });
+    }
+
+    private async processSongWithAnimalFolder(folderPath: string): Promise<void> {
         const folderName = path.basename(folderPath);
         const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
 
         try {
             // Перемещаем папку в in-progress
             await fs.move(folderPath, inProgressPath, { overwrite: true });
-            this.logger.info(`Processing new format folder: ${inProgressPath}`);
+            this.logger.info(`Processing song with animal folder: ${inProgressPath}`);
             
-            await this.processNewFormatVideoGeneration(inProgressPath);
+            await this.processSongWithAnimalVideoGeneration(inProgressPath);
             
             // Перемещаем в processed
             await this.fileService.moveProcessedFolder(folderName);
-            this.logger.info(`Successfully processed new format folder: ${folderName}`);
+            this.logger.info(`Successfully processed song with animal folder: ${folderName}`);
             
         } catch (error) {
-            this.logger.error(`Error processing new format folder ${inProgressPath}:`, error);
+            this.logger.error(`Error processing song with animal folder ${inProgressPath}:`, error);
             
             // В случае ошибки перемещаем в failed
             try {
@@ -101,23 +124,23 @@ export class VideoWorker {
         }
     }
 
-    private async processOldFormatFolder(folderPath: string): Promise<void> {
+    private async processStudyFolder(folderPath: string): Promise<void> {
         const folderName = path.basename(folderPath);
         const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
 
         try {
             // Перемещаем папку в in-progress
             await fs.move(folderPath, inProgressPath, { overwrite: true });
-            this.logger.info(`Processing old format folder: ${inProgressPath}`);
+            this.logger.info(`Processing study format folder: ${inProgressPath}`);
             
-            await this.processOldFormatVideoGeneration(inProgressPath);
+            await this.processStudyVideoGeneration(inProgressPath);
             
             // Перемещаем в processed
             await this.fileService.moveProcessedFolder(folderName);
-            this.logger.info(`Successfully processed old format folder: ${folderName}`);
+            this.logger.info(`Successfully processed study format folder: ${folderName}`);
             
         } catch (error) {
-            this.logger.error(`Error processing old format folder ${inProgressPath}:`, error);
+            this.logger.error(`Error processing study format folder ${inProgressPath}:`, error);
             
             // В случае ошибки перемещаем в failed
             try {
@@ -128,7 +151,52 @@ export class VideoWorker {
         }
     }
 
-    private async processNewFormatVideoGeneration(folderPath: string): Promise<void> {
+    private async processSingleVideoFile(filePath: string): Promise<void> {
+        const folderName = path.basename(filePath, path.extname(filePath));
+        const folderPath = path.join(this.fileService.getInProgressDir(), folderName);
+        
+        // Проверяем, не обрабатывается ли уже эта папка воркером
+        if (await fs.pathExists(folderPath)) {
+            this.logger.info(`Folder ${folderName} already exists in in-progress, skipping to avoid conflicts with worker processing`);
+            return;
+        }
+
+        await this.fileService.createFolder(folderPath);
+
+        const lockAcquired = await this.lockService.acquireLock(folderPath);
+        if (!lockAcquired) {
+            this.logger.warn(`Could not acquire lock for folder: ${folderPath}, skipping.`);
+            await fs.remove(folderPath);
+            return;
+        }
+
+        try {
+            // Переместить JSON из unprocessed в папку
+            const destJsonPath = path.join(folderPath, path.basename(filePath));
+            await fs.move(filePath, destJsonPath, { overwrite: false });
+
+            this.logger.info(`Processing single video format file: ${filePath}`);
+            
+            await this.processSingleVideoGeneration(folderPath);
+            
+            // Перемещаем в processed
+            await this.fileService.moveProcessedFolder(folderName);
+            this.logger.info(`Successfully processed single video format file: ${filePath}`);
+            
+        } catch (error) {
+            this.logger.error(`Error processing single video format file ${filePath}:`, error);
+            
+            // В случае ошибки перемещаем в failed
+            try {
+                await this.fileService.moveFailedFolder(folderName);
+            } catch (moveError) {
+                this.logger.error(`Failed to move folder to failed: ${folderName}`, moveError);
+            }
+        }
+        // Блокировка автоматически освобождается в moveProcessedFolder/moveFailedFolder
+    }
+
+    private async processSongWithAnimalVideoGeneration(folderPath: string): Promise<void> {
         let lockReleased = false;
         
         try {
@@ -173,15 +241,15 @@ export class VideoWorker {
             const jsonFilePath = path.join(folderPath, jsonFile);
             const data = await this.fileService.readFile(jsonFilePath);
 
-            // Проверяем, что это новый формат с video_prompts
-            if (!this.isNewFormatWithVideoPrompts(data)) {
-                throw new Error("Data is not in new format with video_prompts");
+            // Проверяем, что это формат песни с животными с video_prompts
+            if (!isSongWithAnimalWithVideoPrompts(data)) {
+                throw new Error("Data is not in song with animal format with video_prompts");
             }
 
             // Теперь TypeScript знает, что data имеет video_prompts
             const newFormatData = data as any; // Type assertion для обхода проблем с типами
 
-            // Валидируем новый формат с video_prompts
+            // Валидируем формат песни с животными с video_prompts
             if (!newFormatData.video_prompts || !Array.isArray(newFormatData.video_prompts) || newFormatData.video_prompts.length === 0) {
                 throw new Error("No video_prompts found in JSON file");
             }
@@ -271,7 +339,7 @@ export class VideoWorker {
             await this.stateService.markCompleted(folderPath);
             
         } catch (error: unknown) {
-            this.logger.error(`Error processing new format folder: ${folderPath}`, error);
+            this.logger.error(`Error processing song with animal folder: ${folderPath}`, error);
             try {
                 const errorMessage = error instanceof Error ? error.message : "Unknown error";
                 await this.stateService.markFailed(folderPath, errorMessage);
@@ -292,7 +360,7 @@ export class VideoWorker {
         }
     }
 
-    private async processOldFormatVideoGeneration(folderPath: string): Promise<void> {
+    private async processStudyVideoGeneration(folderPath: string): Promise<void> {
         let lockReleased = false;
         
         try {
@@ -337,15 +405,15 @@ export class VideoWorker {
             const jsonFilePath = path.join(folderPath, jsonFile);
             const data = await this.fileService.readFile(jsonFilePath);
 
-            // Проверяем, что это старый формат с enhancedMedia
-            if (!this.isOldFormatWithEnhancedMedia(data)) {
-                throw new Error("Data is not in old format with enhancedMedia");
+            // Проверяем, что это формат обучения с enhancedMedia
+            if (!isStudyWithEnhancedMedia(data)) {
+                throw new Error("Data is not in study format with enhancedMedia");
             }
 
             // Теперь TypeScript знает, что data имеет enhancedMedia
             const oldFormatData = data as any; // Type assertion для обхода проблем с типами
 
-            // Валидируем старый формат с enhancedMedia
+            // Валидируем формат обучения с enhancedMedia
             if (!oldFormatData.enhancedMedia || !Array.isArray(oldFormatData.enhancedMedia) || oldFormatData.enhancedMedia.length === 0) {
                 throw new Error("No enhancedMedia found in JSON file");
             }
@@ -374,12 +442,12 @@ export class VideoWorker {
             const completedScenes = state.completedScenes || [];
 
             // Обрабатываем сцены
-            await this.processOldFormatScenes(folderPath, numericScenes, finalScene, completedScenes);
+            await this.processStudyScenes(folderPath, numericScenes, finalScene, completedScenes);
 
             await this.stateService.markCompleted(folderPath);
             
         } catch (error: unknown) {
-            this.logger.error(`Error processing old format folder: ${folderPath}`, error);
+            this.logger.error(`Error processing study format folder: ${folderPath}`, error);
             try {
                 const errorMessage = error instanceof Error ? error.message : "Unknown error";
                 await this.stateService.markFailed(folderPath, errorMessage);
@@ -400,7 +468,119 @@ export class VideoWorker {
         }
     }
 
-    private async processOldFormatScenes(
+    private async processSingleVideoGeneration(folderPath: string): Promise<void> {
+        let lockReleased = false;
+        
+        try {
+            // Блокировка уже получена в processSingleVideoFile, не нужно получать её снова
+
+            // Инициализируем состояние
+            const state = await this.stateService.initializeState(
+                folderPath,
+                this.lockService.getWorkerId(),
+                this.maxRetries
+            );
+
+            // Проверяем превышение максимального количества попыток
+            if (await this.stateService.hasExceededMaxRetries(folderPath)) {
+                if (await this.stateService.isInCooldown(folderPath)) {
+                    this.logger.info(`Folder ${folderPath} is in cooldown period, skipping`);
+                    return;
+                }
+
+                const failedAttempts = state.failedAttempts || 0;
+                const baseDelay = 60000;
+                const maxDelay = 3600000;
+                const cooldownTime = Math.min(baseDelay * Math.pow(2, failedAttempts), maxDelay);
+
+                this.logger.warn(`Max retries exceeded for ${folderPath}, marking as failed with ${cooldownTime/1000}s cooldown`);
+                await this.stateService.markFailed(folderPath, "Max retries exceeded", cooldownTime);
+                await this.fileService.moveFailedFolder(path.basename(folderPath));
+                return;
+            }
+
+            // Читаем JSON файл
+            const files = await fs.readdir(folderPath);
+            const jsonFile = files.find((file) => file.endsWith(".json"));
+            if (!jsonFile) {
+                throw new Error("No JSON file found");
+            }
+
+            const jsonFilePath = path.join(folderPath, jsonFile);
+            const data = await this.fileService.readFile(jsonFilePath);
+
+            // Проверяем, что это новый формат с одним видео
+            if (!isSingleVideoFormat(data)) {
+                throw new Error("Data is not in single video format");
+            }
+
+            // Type assertion для нового формата
+            const singleVideoData = data as any;
+
+            // Валидируем структуру
+            if (!singleVideoData.song || !singleVideoData.video_prompt || !singleVideoData.video_prompt.video_prompt) {
+                throw new Error("Invalid single video format: missing required fields");
+            }
+
+            this.logger.info(`Processing single video generation for: ${singleVideoData.title || 'Untitled'}`);
+
+            // Путь к изображению blank-video.png в папке generations
+            const blankImagePath = path.join(this.fileService.getBaseDir(), 'blank-video.png');
+            
+            // Проверяем существование изображения
+            if (!await fs.pathExists(blankImagePath)) {
+                throw new Error(`Blank video image not found: ${blankImagePath}`);
+            }
+
+            // Путь для выходного видео
+            const videoPath = path.join(folderPath, 'video.mp4');
+
+            // Проверяем, не существует ли уже видео
+            if (await fs.pathExists(videoPath)) {
+                this.logger.info(`Video already exists, skipping generation`);
+                await this.stateService.markCompleted(folderPath);
+                return;
+            }
+
+            // Генерируем видео
+            this.logger.info(`Generating single video with prompt: ${singleVideoData.video_prompt.video_prompt.substring(0, 100)}...`);
+            
+            const videoResult = await this.videoService.generateVideo(
+                singleVideoData.video_prompt.video_prompt,
+                blankImagePath,
+                videoPath,
+                10 // duration
+            );
+
+            // Сохраняем мета-информацию о видео
+            await this.saveVideoMeta(folderPath, 'single', videoResult);
+
+            this.logger.info(`Successfully generated single video: ${videoPath}`);
+            await this.stateService.markCompleted(folderPath);
+            
+        } catch (error: unknown) {
+            this.logger.error(`Error processing single video folder: ${folderPath}`, error);
+            try {
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                await this.stateService.markFailed(folderPath, errorMessage);
+                await this.fileService.moveFailedFolder(path.basename(folderPath));
+            } catch (stateError) {
+                this.logger.error(`Error updating state for ${folderPath}`, stateError);
+            }
+        } finally {
+            try {
+                if (!lockReleased) {
+                    await this.lockService.releaseLock(folderPath);
+                    lockReleased = true;
+                    this.logger.info(`Lock released for ${folderPath}`);
+                }
+            } catch (lockError) {
+                this.logger.warn(`Error releasing lock for ${folderPath}:`, lockError);
+            }
+        }
+    }
+
+    private async processStudyScenes(
         folderPath: string,
         numericScenes: any[],
         finalScene: any,
@@ -655,11 +835,7 @@ export class VideoWorker {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    private isNewFormatWithVideoPrompts(data: any): boolean {
-        return data && data.video_prompts && Array.isArray(data.video_prompts) && data.video_prompts.length > 0;
-    }
 
-    private isOldFormatWithEnhancedMedia(data: any): boolean {
-        return data && data.enhancedMedia && Array.isArray(data.enhancedMedia) && data.enhancedMedia.length > 0;
-    }
+
+
 }

@@ -2,10 +2,11 @@ import { FileService } from '../core/file-service';
 import { LockService } from '../core/lock-service';
 import { ImageService } from '../generators/image-service';
 import { GenerationData, NewFormatData, NewFormatWithVideoData, NewFormatWithArraysData, ContentData } from '../../types';
+import { isSingleVideoFormat, isSongWithAnimal, isStudy } from '../../utils';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 
-export class UniversalWorker {
+export class ImageWorker {
     private fileService = new FileService();
     private imageService = new ImageService();
     private lockService = new LockService();
@@ -39,20 +40,23 @@ export class UniversalWorker {
         // 2. Определить формат и обработать соответственно
         console.log(`Processing file for image generation: ${filePath}`);
         
-        if (this.isNewFormatWithArrays(data)) {
+        if (isSongWithAnimal(data)) {
             console.log(`Генерация картинок. Шортсы с животными по формату "The X says X"`);
-            await this.processNewFormatWithArraysImages(filePath, data as NewFormatWithArraysData);
+            await this.processSongWithAnimalImages(filePath, data as NewFormatWithArraysData);
 
-        } else if (this.isOldFormat(data)) {
-            console.log(`Генерация картинок. Самый первый формат, с одним базовым изображением и связанным сюжетом`);
-            await this.processOldFormatImages(filePath, data as GenerationData);
+        } else if (isStudy(data)) {
+            console.log(`Генерация картинок. Формат обучения, с одним базовым изображением и связанным сюжетом`);
+            await this.processStudyImages(filePath, data as GenerationData);
+        } else if (isSingleVideoFormat(data)) {
+            console.log(`Файл в формате single video (song + video_prompt), пропускаем - это для video worker`);
+            return;
         } else {
             console.error(`Unknown format for file: ${filePath}`);
             console.error(`Data: ${JSON.stringify(data)}`);
         }
     }
 
-    private async processNewFormatWithArraysImages(filePath: string, data: NewFormatWithArraysData): Promise<void> {
+    private async processSongWithAnimalImages(filePath: string, data: NewFormatWithArraysData): Promise<void> {
         const folderName = path.basename(filePath, path.extname(filePath));
         const folderPath = path.join(this.fileService.getInProgressDir(), folderName);
         
@@ -77,7 +81,7 @@ export class UniversalWorker {
             await fs.move(filePath, destJsonPath, { overwrite: false });
 
             // Генерировать картинки пачками по 5 с интервалом в 5 секунд между отправкой пачек
-            console.log(`Starting batch generation of ${data.prompts.length} prompts with 5 variants each for NewFormatWithArrays`);
+            console.log(`Starting batch generation of ${data.prompts.length} prompts with 5 variants each for SongWithAnimal`);
             
             const allPromises = [];
             
@@ -123,7 +127,7 @@ export class UniversalWorker {
             const successfulCount = imageResults.filter((r: any) => r.success).length;
             const totalCount = data.prompts.length * 5; // 5 вариантов для каждого промпта
             
-            console.log(`Generated ${successfulCount}/${totalCount} images successfully for NewFormatWithArrays`);
+            console.log(`Generated ${successfulCount}/${totalCount} images successfully for SongWithAnimal`);
             
             // Детальное логирование результатов по сценам
             console.log('Image generation results:');
@@ -146,13 +150,13 @@ export class UniversalWorker {
             if (successfulCount > 0) {
                 // Перенести папку в processed (блокировка будет автоматически удалена)
                 await this.fileService.moveProcessedFolder(folderName);
-                console.log(`Successfully processed new format with arrays images: ${filePath} (${successfulCount}/${totalCount} images)`);
+                console.log(`Successfully processed song with animal images: ${filePath} (${successfulCount}/${totalCount} images)`);
             } else {
                 // Если ни одно изображение не сгенерировано, перемещаем в failed (блокировка будет автоматически удалена)
                 throw new Error(`Failed to generate any images (0/${totalCount})`);
             }
         } catch (error) {
-            console.error(`Error processing new format with arrays images file ${filePath}:`, error);
+            console.error(`Error processing song with animal images file ${filePath}:`, error);
             
             // В случае ошибки перемещаем в failed (блокировка будет автоматически удалена)
             try {
@@ -163,7 +167,7 @@ export class UniversalWorker {
         }
     }
 
-    private async processOldFormatImages(filePath: string, data: GenerationData): Promise<void> {
+    private async processStudyImages(filePath: string, data: GenerationData): Promise<void> {
         const firstScene = data.enhancedMedia?.find((media: any) => media.scene === 0);
         if (!firstScene) {
             console.error(`No scene 0 in file: ${filePath}`);
@@ -206,9 +210,9 @@ export class UniversalWorker {
             // Перенести папку в processed (блокировка будет автоматически удалена)
             await this.fileService.moveProcessedFolder(folderName);
             
-            console.log(`Successfully processed old format file: ${filePath}`);
+            console.log(`Successfully processed study format file: ${filePath}`);
         } catch (error) {
-            console.error(`Error processing old format file ${filePath}:`, error);
+            console.error(`Error processing study format file ${filePath}:`, error);
             
             // В случае ошибки перемещаем в failed (блокировка будет автоматически удалена)
             try {
@@ -219,35 +223,7 @@ export class UniversalWorker {
         }
     }
 
-    private isNewFormatWithArrays(data: any): data is NewFormatWithArraysData {
-        return data && 
-               typeof data.global_style === 'string' && 
-               Array.isArray(data.prompts) && 
-               data.prompts.length > 0 &&
-               Array.isArray(data.video_prompts) && 
-               data.video_prompts.length > 0 &&
-               Array.isArray(data.titles) &&
-               Array.isArray(data.descriptions) &&
-               Array.isArray(data.hashtags);
-    }
 
-    private isNewFormatWithVideo(data: any): data is NewFormatWithVideoData {
-        return data && 
-               typeof data.global_style === 'string' && 
-               Array.isArray(data.prompts) && 
-               data.prompts.length > 0 &&
-               Array.isArray(data.video_prompts) && 
-               data.video_prompts.length > 0 &&
-               typeof data.title === 'string' &&
-               typeof data.description === 'string' &&
-               typeof data.hashtags === 'string';
-    }
 
-    private isOldFormat(data: any): data is GenerationData {
-        return data && 
-               data.script &&
-               data.narration &&
-               Array.isArray(data.enhancedMedia) && 
-               data.enhancedMedia.length > 0;
-    }
+
 }

@@ -51,6 +51,9 @@ export class FileService {
     public getFailedDir(): string {
         return this.failedDir;
     }
+    public getBaseDir(): string {
+        return this.baseDir;
+    }
     public async getUnprocessedFiles(): Promise<string[]> {
         try {
             const files: string[] = await fs.readdir(this.unprocessedDir);
