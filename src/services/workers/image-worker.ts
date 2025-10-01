@@ -87,7 +87,7 @@ export class ImageWorker {
             
             for (let i = 0; i < data.prompts.length; i++) {
                 const prompt = data.prompts[i];
-                const combinedPrompt = `${prompt.prompt}, ${data.global_style}`;
+                const combinedPrompt = `${data.global_style} \n ${prompt.prompt}`;
                 
                 // Создаем подпапку для каждого промпта
                 const promptFolderPath = path.join(folderPath, `scene_${i}`);
@@ -99,7 +99,7 @@ export class ImageWorker {
                 for (let variant = 1; variant <= 5; variant++) {
                     const imgPath = path.join(promptFolderPath, `variant_${variant}.png`);
                     
-                    const imagePromise = this.imageService.generateImage(combinedPrompt, imgPath)
+                    const imagePromise = this.imageService.generateImage(combinedPrompt, imgPath, 'isSongWithAnimal', path.basename(filePath))
                         .then(() => {
                             console.log(`Successfully generated variant ${variant} for scene ${i}`);
                             return { scene: i, variant, success: true };
@@ -119,15 +119,60 @@ export class ImageWorker {
                 }
             }
             
+            // Обрабатываем additional_frames если они есть
+            if (data.additional_frames && data.additional_frames.length > 0) {
+                console.log(`Processing ${data.additional_frames.length} additional frames`);
+                
+                for (let i = 0; i < data.additional_frames.length; i++) {
+                    const frame = data.additional_frames[i];
+                    const combinedPrompt = `${frame.group_image_prompt}`;
+                    
+                    // Создаем подпапку для каждого additional frame
+                    const frameFolderPath = path.join(folderPath, `additional_frame_${frame.index}`);
+                    await this.fileService.createFolder(frameFolderPath);
+                    
+                    console.log(`Starting additional frame ${frame.index}: ${frame.group_image_prompt.substring(0, 100)}...`);
+                    
+                    // Генерируем 5 вариантов для каждого additional frame
+                    for (let variant = 1; variant <= 5; variant++) {
+                        const imgPath = path.join(frameFolderPath, `variant_${variant}.png`);
+                        
+                        const imagePromise = this.imageService.generateImage(combinedPrompt, imgPath, 'isSongWithAnimal', path.basename(filePath))
+                            .then(() => {
+                                console.log(`Successfully generated variant ${variant} for additional frame ${frame.index}`);
+                                return { scene: `additional_frame_${frame.index}`, variant, success: true };
+                            })
+                            .catch((error: any) => {
+                                console.error(`Failed to generate variant ${variant} for additional frame ${frame.index}:`, error);
+                                return { scene: `additional_frame_${frame.index}`, variant, success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+                            });
+                        
+                        allPromises.push(imagePromise);
+                    }
+                    
+                    // Добавляем задержку в 5 секунд перед отправкой следующей пачки additional frames
+                    if (i < data.additional_frames.length - 1) {
+                        console.log(`Waiting 5 seconds before sending next additional frame batch...`);
+                        await new Promise(resolve => setTimeout(resolve, 5000));
+                    }
+                }
+            }
+
             // Ждем завершения всех генераций
             console.log(`All batches sent. Waiting for completion...`);
             const imageResults = await Promise.all(allPromises);
 
             // Проверяем, сколько изображений удалось сгенерировать
+            const regularImagesCount = data.prompts.length * 5; // 5 вариантов для каждого промпта
+            const additionalImagesCount = data.additional_frames ? data.additional_frames.length * 5 : 0; // 5 вариантов для каждого additional frame
+            const totalCount = regularImagesCount + additionalImagesCount;
             const successfulCount = imageResults.filter((r: any) => r.success).length;
-            const totalCount = data.prompts.length * 5; // 5 вариантов для каждого промпта
             
             console.log(`Generated ${successfulCount}/${totalCount} images successfully for SongWithAnimal`);
+            console.log(`  Regular scenes: ${data.prompts.length} scenes × 5 variants = ${regularImagesCount} images`);
+            if (data.additional_frames) {
+                console.log(`  Additional frames: ${data.additional_frames.length} frames × 5 variants = ${additionalImagesCount} images`);
+            }
             
             // Детальное логирование результатов по сценам
             console.log('Image generation results:');
@@ -144,6 +189,25 @@ export class ImageWorker {
                         console.log(`    Variant ${result.variant}: ❌ Failed - ${result.error || 'Unknown error'}`);
                     }
                 });
+            }
+            
+            // Логирование результатов по additional frames
+            if (data.additional_frames) {
+                for (let i = 0; i < data.additional_frames.length; i++) {
+                    const frame = data.additional_frames[i];
+                    const frameResults = imageResults.filter((r: any) => r.scene === `additional_frame_${frame.index}`);
+                    const frameSuccessCount = frameResults.filter((r: any) => r.success).length;
+                    console.log(`  Additional Frame ${frame.index}: ${frameSuccessCount}/5 variants generated`);
+                    
+                    // Детали по вариантам
+                    frameResults.forEach((result: any) => {
+                        if (result.success) {
+                            console.log(`    Variant ${result.variant}: ✅ Success`);
+                        } else {
+                            console.log(`    Variant ${result.variant}: ❌ Failed - ${result.error || 'Unknown error'}`);
+                        }
+                    });
+                }
             }
             
             // Если хотя бы одно изображение сгенерировано, считаем обработку успешной
@@ -203,7 +267,7 @@ export class ImageWorker {
             const imagePromises = [];
             for (let i = 1; i <= 5; i++) {
                 const imgPath = path.join(folderPath, `base_0_${i}.png`);
-                imagePromises.push(this.imageService.generateImage(firstScene.image_prompt, imgPath));
+                imagePromises.push(this.imageService.generateImage(firstScene.image_prompt, imgPath, 'isStudy', path.basename(filePath)));
             }
             await Promise.all(imagePromises);
             

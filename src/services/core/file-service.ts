@@ -116,10 +116,22 @@ export class FileService {
         const sourcePath: string = path.join(this.inProgressDir, path.basename(folderName));
         const destPath: string = path.join(this.processedDir, path.basename(folderName));
         try {
+            // Check if source folder exists before attempting to move
+            if (!await fs.pathExists(sourcePath)) {
+                console.warn(`Source folder does not exist, skipping move: ${sourcePath}`);
+                return;
+            }
+
             await fs.ensureDir(this.processedDir);
             
             // Удаляем .lock файл перед перемещением папки
             await this.lockService.forceRemoveLock(sourcePath);
+            
+            // Double-check source still exists after lock removal
+            if (!await fs.pathExists(sourcePath)) {
+                console.warn(`Source folder was removed during lock cleanup, skipping move: ${sourcePath}`);
+                return;
+            }
             
             await fs.move(sourcePath, destPath, { overwrite: true });
         } catch (error) {
@@ -131,10 +143,22 @@ export class FileService {
         const sourcePath = path.join(this.inProgressDir, path.basename(folderName));
         const destPath = path.join(this.failedDir, path.basename(folderName));
         try {
+            // Check if source folder exists before attempting to move
+            if (!await fs.pathExists(sourcePath)) {
+                console.warn(`Source folder does not exist, skipping move: ${sourcePath}`);
+                return;
+            }
+
             await fs.ensureDir(this.failedDir);
             
             // Удаляем .lock файл перед перемещением папки
             await this.lockService.forceRemoveLock(sourcePath);
+            
+            // Double-check source still exists after lock removal
+            if (!await fs.pathExists(sourcePath)) {
+                console.warn(`Source folder was removed during lock cleanup, skipping move: ${sourcePath}`);
+                return;
+            }
             
             await fs.move(sourcePath, destPath, { overwrite: true});
         } catch (error) {

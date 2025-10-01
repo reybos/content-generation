@@ -59,9 +59,7 @@ export function isSingleVideoFormat(data: any): boolean {
            typeof data.video_prompt.video_prompt === 'string' &&
            typeof data.video_prompt.line === 'string' &&
            typeof data.video_prompt.index === 'number' &&
-           typeof data.title === 'string' &&
-           typeof data.description === 'string' &&
-           typeof data.hashtags === 'string';
+           typeof data.title === 'string';
 }
 
 /**
@@ -76,9 +74,7 @@ export function isSongWithAnimal(data: any): data is NewFormatWithArraysData {
            data.prompts.length > 0 &&
            Array.isArray(data.video_prompts) && 
            data.video_prompts.length > 0 &&
-           Array.isArray(data.titles) &&
-           Array.isArray(data.descriptions) &&
-           Array.isArray(data.hashtags);
+           Array.isArray(data.titles);
 }
 
 /**

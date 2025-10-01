@@ -18,13 +18,27 @@ export class ImageService {
     private logger: Logger;
     private readonly POLLING_INTERVAL_MS = 5000; // 5 seconds
     private readonly MAX_WAIT_TIME_MS = 300000; // 5 minutes
-    private readonly IMAGE_MODEL = 'fal-ai/minimax/image-01';
+    private readonly DEFAULT_IMAGE_MODEL = 'fal-ai/minimax/image-01';
+    private readonly HALLOWEEN_IMAGE_MODEL = 'fal-ai/imagen4/preview';
 
     /**
      * Create a new ImageService instance
      */
     constructor() {
         this.logger = new Logger();
+    }
+
+    /**
+     * Determine the appropriate model based on format and filename
+     */
+    private getModelForGeneration(format: string, filename: string): string {
+        if (format === 'isSongWithAnimal' && filename.toLowerCase().includes('halloweennew')) {
+            this.logger.info(`Using Halloween model for file: ${filename}`);
+            return this.HALLOWEEN_IMAGE_MODEL;
+        }
+        
+        this.logger.info(`Using default model for file: ${filename}`);
+        return this.DEFAULT_IMAGE_MODEL;
     }
 
     /**
@@ -179,23 +193,34 @@ export class ImageService {
     /**
      * Generate an image from a prompt and save it to the specified path
      */
-    public async generateImage(prompt: string, outputPath: string): Promise<{ requestId: string, prompt: string } | void> {
+    public async generateImage(prompt: string, outputPath: string, format?: string, filename?: string): Promise<{ requestId: string, prompt: string } | void> {
         this.logger.info(`Generating image with prompt: ${prompt}`);
         this.logger.info(`Image will be saved to: ${outputPath}`);
 
+        // Determine the appropriate model
+        const model = this.getModelForGeneration(format || '', filename || '');
+        this.logger.info(`Using model: ${model}`);
+
         // Mock mode
         if (process.env.MOCK_API === 'true') {
-            return this.mockGenerateImage(prompt, outputPath);
+            return this.mockGenerateImage(prompt, outputPath, format, filename);
         }
 
         try {
-            const { request_id } = await fal.queue.submit(this.IMAGE_MODEL, {
-                input: {
-                    prompt,
-                    aspect_ratio: '9:16',
-                    // aspect_ratio: '16:9',
-                    num_images: 1,
-                },
+            const inputParams: any = {
+                prompt,
+                // aspect_ratio: '9:16',
+                aspect_ratio: '16:9',
+                num_images: 1,
+            };
+
+            // Add resolution parameter for Halloween model
+            if (model === this.HALLOWEEN_IMAGE_MODEL) {
+                inputParams.resolution = '1K';
+            }
+
+            const { request_id } = await fal.queue.submit(model, {
+                input: inputParams,
             });
 
             this.logger.info(`Image generation request submitted with ID: ${request_id}`);
@@ -206,7 +231,7 @@ export class ImageService {
                 startTime: Date.now(),
             };
 
-            const result = await this.pollForResult(status);
+            const result = await this.pollForResult(status, model);
 
             if (
                 result &&
@@ -239,7 +264,7 @@ export class ImageService {
                 
                 if (cleanedPrompt !== prompt && cleanedPrompt.length > 10) {
                     try {
-                        return await this.generateImage(cleanedPrompt, outputPath);
+                        return await this.generateImage(cleanedPrompt, outputPath, format, filename);
                     } catch (retryError: any) {
                         if (retryError.message && retryError.message.includes('content_policy_violation')) {
                             // Try with more aggressive cleaning (level 2)
@@ -248,13 +273,13 @@ export class ImageService {
                             
                             if (aggressivePrompt !== cleanedPrompt && aggressivePrompt.length > 10) {
                                 try {
-                                    return await this.generateImage(aggressivePrompt, outputPath);
+                                    return await this.generateImage(aggressivePrompt, outputPath, format, filename);
                                 } catch (finalError: any) {
                                     if (finalError.message && finalError.message.includes('content_policy_violation')) {
                                         // Final fallback - very basic prompt
                                         const basicPrompt = "A cute animated character in a garden, 3D animation style";
                                         this.logger.info(`Retrying with basic prompt: ${basicPrompt}`);
-                                        return await this.generateImage(basicPrompt, outputPath);
+                                        return await this.generateImage(basicPrompt, outputPath, format, filename);
                                     }
                                     throw finalError;
                                 }
@@ -262,7 +287,7 @@ export class ImageService {
                                 // Try with basic prompt
                                 const basicPrompt = "A cute animated character in a garden, 3D animation style";
                                 this.logger.info(`Retrying with basic prompt: ${basicPrompt}`);
-                                return await this.generateImage(basicPrompt, outputPath);
+                                return await this.generateImage(basicPrompt, outputPath, format, filename);
                             }
                         }
                         throw retryError;
@@ -271,7 +296,7 @@ export class ImageService {
                     // If cleaning didn't help, try with a very basic prompt
                     const basicPrompt = "A cute animated character in a garden, 3D animation style";
                     this.logger.info(`Retrying with basic prompt: ${basicPrompt}`);
-                    return await this.generateImage(basicPrompt, outputPath);
+                    return await this.generateImage(basicPrompt, outputPath, format, filename);
                 }
             }
             
@@ -283,7 +308,7 @@ export class ImageService {
     /**
      * Poll for the result of an image generation request
      */
-    private async pollForResult(status: ImageGenerationStatus): Promise<any> {
+    private async pollForResult(status: ImageGenerationStatus, model: string): Promise<any> {
         while (true) {
             try {
                 const elapsedTime = Date.now() - status.startTime;
@@ -293,7 +318,7 @@ export class ImageService {
                     );
                 }
 
-                const statusResponse = await fal.queue.status(this.IMAGE_MODEL, {
+                const statusResponse = await fal.queue.status(model, {
                     requestId: status.requestId,
                     logs: true,
                 });
@@ -322,7 +347,7 @@ export class ImageService {
 
                 if (status.status === 'completed') {
                     this.logger.info(`Image generation request ${status.requestId} completed`);
-                    return await fal.queue.result(this.IMAGE_MODEL, {
+                    return await fal.queue.result(model, {
                         requestId: status.requestId,
                     });
                 }
@@ -349,7 +374,7 @@ export class ImageService {
     /**
      * Mock implementation of image generation for testing
      */
-    private async mockGenerateImage(prompt: string, outputPath: string): Promise<void> {
+    private async mockGenerateImage(prompt: string, outputPath: string, format?: string, filename?: string): Promise<void> {
         this.logger.info(`[MOCK] Generating image with prompt: ${prompt}`);
 
         try {

@@ -21,6 +21,7 @@ export class VideoService {
     private readonly POLLING_INTERVAL_MS = 15000; // 15 seconds
     private readonly MAX_WAIT_TIME_MS = 900000; // 15 minutes
     private readonly VIDEO_MODEL = "fal-ai/minimax/hailuo-02/standard/image-to-video";
+    // private readonly VIDEO_MODEL = "fal-ai/minimax/hailuo-02/pro/image-to-video"; //тут только 6 секунд
 
     constructor() {
         this.logger = new Logger();
@@ -108,6 +109,9 @@ export class VideoService {
      * @returns Promise resolving with the result when completed
      */
     private async pollForResult(status: VideoGenerationStatus): Promise<any> {
+        let consecutiveErrors = 0;
+        const maxConsecutiveErrors = 3;
+        
         while (true) {
             try {
                 const elapsedTime = Date.now() - status.startTime;
@@ -119,6 +123,9 @@ export class VideoService {
                     requestId: status.requestId,
                     logs: true
                 });
+
+                // Reset error counter on successful API call
+                consecutiveErrors = 0;
 
                 const apiStatus = statusResponse.status as string;
 
@@ -149,7 +156,24 @@ export class VideoService {
 
                 await this.delay(this.POLLING_INTERVAL_MS);
             } catch (error) {
-                this.logger.error(`Error polling for video generation result: ${error}`);
+                consecutiveErrors++;
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                
+                // Check if it's a timeout or gateway error that we should retry
+                const isRetryableError = errorMessage.includes('504') || 
+                                       errorMessage.includes('Gateway Timeout') ||
+                                       errorMessage.includes('timeout') ||
+                                       errorMessage.includes('ECONNRESET') ||
+                                       errorMessage.includes('ENOTFOUND');
+                
+                if (isRetryableError && consecutiveErrors < maxConsecutiveErrors) {
+                    const backoffDelay = this.POLLING_INTERVAL_MS * Math.pow(2, consecutiveErrors - 1);
+                    this.logger.warn(`Retryable error (${consecutiveErrors}/${maxConsecutiveErrors}): ${errorMessage}. Retrying in ${backoffDelay}ms`);
+                    await this.delay(backoffDelay);
+                    continue;
+                }
+                
+                this.logger.error(`Error polling for video generation result: ${errorMessage}`);
                 throw error;
             }
         }

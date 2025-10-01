@@ -83,6 +83,15 @@ export const NewFormatWithVideoDataSchema = z.object({
 });
 export type NewFormatWithVideoData = z.infer<typeof NewFormatWithVideoDataSchema>;
 
+// Additional frame schema and type
+export const AdditionalFrameSchema = z.object({
+    index: z.number(),
+    lines: z.array(z.string()),
+    group_image_prompt: z.string(),
+    group_video_prompt: z.string()
+});
+export type AdditionalFrame = z.infer<typeof AdditionalFrameSchema>;
+
 // New format with arrays for titles, descriptions, and hashtags
 export const NewFormatWithArraysDataSchema = z.object({
     global_style: z.string(),
@@ -90,7 +99,8 @@ export const NewFormatWithArraysDataSchema = z.object({
     video_prompts: z.array(VideoPromptSchema),
     titles: z.array(z.string()),
     descriptions: z.array(z.string()),
-    hashtags: z.array(z.string())
+    hashtags: z.array(z.string()),
+    additional_frames: z.array(AdditionalFrameSchema).optional()
 });
 export type NewFormatWithArraysData = z.infer<typeof NewFormatWithArraysDataSchema>;
 

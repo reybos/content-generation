@@ -120,6 +120,16 @@ export class VideoWorker {
                 await this.fileService.moveFailedFolder(folderName);
             } catch (moveError) {
                 this.logger.error(`Failed to move folder to failed: ${folderName}`, moveError);
+                // If we can't move to failed, at least try to clean up the in-progress folder
+                try {
+                    const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
+                    if (await fs.pathExists(inProgressPath)) {
+                        await fs.remove(inProgressPath);
+                        this.logger.info(`Cleaned up in-progress folder: ${inProgressPath}`);
+                    }
+                } catch (cleanupError) {
+                    this.logger.error(`Failed to cleanup in-progress folder: ${folderName}`, cleanupError);
+                }
             }
         }
     }
@@ -147,6 +157,16 @@ export class VideoWorker {
                 await this.fileService.moveFailedFolder(folderName);
             } catch (moveError) {
                 this.logger.error(`Failed to move folder to failed: ${folderName}`, moveError);
+                // If we can't move to failed, at least try to clean up the in-progress folder
+                try {
+                    const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
+                    if (await fs.pathExists(inProgressPath)) {
+                        await fs.remove(inProgressPath);
+                        this.logger.info(`Cleaned up in-progress folder: ${inProgressPath}`);
+                    }
+                } catch (cleanupError) {
+                    this.logger.error(`Failed to cleanup in-progress folder: ${folderName}`, cleanupError);
+                }
             }
         }
     }
@@ -191,6 +211,16 @@ export class VideoWorker {
                 await this.fileService.moveFailedFolder(folderName);
             } catch (moveError) {
                 this.logger.error(`Failed to move folder to failed: ${folderName}`, moveError);
+                // If we can't move to failed, at least try to clean up the in-progress folder
+                try {
+                    const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
+                    if (await fs.pathExists(inProgressPath)) {
+                        await fs.remove(inProgressPath);
+                        this.logger.info(`Cleaned up in-progress folder: ${inProgressPath}`);
+                    }
+                } catch (cleanupError) {
+                    this.logger.error(`Failed to cleanup in-progress folder: ${folderName}`, cleanupError);
+                }
             }
         }
         // Блокировка автоматически освобождается в moveProcessedFolder/moveFailedFolder
@@ -262,8 +292,8 @@ export class VideoWorker {
 
             this.logger.info(`Found ${newFormatData.video_prompts.length} video prompts and ${sceneImages.length} scene images`);
 
-            // Обрабатываем видео батчами по 4
-            const batchSize = 4;
+            // Обрабатываем видео батчами по 10
+            const batchSize = 10;
             const totalVideos = newFormatData.video_prompts.length;
             
             this.logger.info(`Starting batch video generation: ${totalVideos} videos in batches of ${batchSize}`);
