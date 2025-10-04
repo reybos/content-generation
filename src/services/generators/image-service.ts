@@ -219,7 +219,7 @@ export class ImageService {
                 inputParams.resolution = '1K';
             }
 
-            const { request_id } = await fal.queue.submit(model, {
+            const { request_id } = await this.submitWithRetry(model, {
                 input: inputParams,
             });
 
@@ -244,9 +244,7 @@ export class ImageService {
 
                 await fs.ensureDir(outputDir);
 
-                const response = await fetch(imageUrl);
-                const buffer = await response.arrayBuffer();
-                await fs.writeFile(outputPath, Buffer.from(buffer));
+                await this.downloadImageWithRetry(imageUrl, outputPath);
 
                 this.logger.info(`Image generated successfully: ${outputPath}`);
                 return { requestId: request_id, prompt };
@@ -318,7 +316,7 @@ export class ImageService {
                     );
                 }
 
-                const statusResponse = await fal.queue.status(model, {
+                const statusResponse = await this.getStatusWithRetry(model, {
                     requestId: status.requestId,
                     logs: true,
                 });
@@ -347,7 +345,7 @@ export class ImageService {
 
                 if (status.status === 'completed') {
                     this.logger.info(`Image generation request ${status.requestId} completed`);
-                    return await fal.queue.result(model, {
+                    return await this.getResultWithRetry(model, {
                         requestId: status.requestId,
                     });
                 }
@@ -369,6 +367,162 @@ export class ImageService {
      */
     private delay(ms: number): Promise<void> {
         return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Submit request with retry logic
+     */
+    private async submitWithRetry(model: string, params: any, maxRetries: number = 3): Promise<any> {
+        let lastError: any;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                this.logger.info(`Submitting request to ${model} (attempt ${attempt}/${maxRetries})`);
+                return await fal.queue.submit(model, params);
+            } catch (error: any) {
+                lastError = error;
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                
+                // Check if this is a retryable error
+                const isRetryableError = this.isRetryableError(errorMessage);
+                
+                if (isRetryableError && attempt < maxRetries) {
+                    const backoffDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Exponential backoff, max 10s
+                    this.logger.warn(`Retryable error on attempt ${attempt}: ${errorMessage}. Retrying in ${backoffDelay}ms`);
+                    await this.delay(backoffDelay);
+                } else {
+                    this.logger.error(`Non-retryable error or max retries exceeded: ${errorMessage}`);
+                    throw error;
+                }
+            }
+        }
+        
+        throw lastError;
+    }
+
+    /**
+     * Download image with retry logic
+     */
+    private async downloadImageWithRetry(imageUrl: string, outputPath: string, maxRetries: number = 3): Promise<void> {
+        let lastError: any;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                this.logger.info(`Downloading image from ${imageUrl} (attempt ${attempt}/${maxRetries})`);
+                const response = await fetch(imageUrl);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const buffer = await response.arrayBuffer();
+                await fs.writeFile(outputPath, Buffer.from(buffer));
+                this.logger.info(`Image downloaded successfully: ${outputPath}`);
+                return;
+            } catch (error: any) {
+                lastError = error;
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                
+                // Check if this is a retryable error
+                const isRetryableError = this.isRetryableError(errorMessage);
+                
+                if (isRetryableError && attempt < maxRetries) {
+                    const backoffDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Exponential backoff, max 10s
+                    this.logger.warn(`Retryable error downloading image on attempt ${attempt}: ${errorMessage}. Retrying in ${backoffDelay}ms`);
+                    await this.delay(backoffDelay);
+                } else {
+                    this.logger.error(`Non-retryable error or max retries exceeded downloading image: ${errorMessage}`);
+                    throw error;
+                }
+            }
+        }
+        
+        throw lastError;
+    }
+
+    /**
+     * Get status with retry logic
+     */
+    private async getStatusWithRetry(model: string, params: any, maxRetries: number = 3): Promise<any> {
+        let lastError: any;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                this.logger.info(`Getting status for ${model} (attempt ${attempt}/${maxRetries})`);
+                return await fal.queue.status(model, params);
+            } catch (error: any) {
+                lastError = error;
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                
+                // Check if this is a retryable error
+                const isRetryableError = this.isRetryableError(errorMessage);
+                
+                if (isRetryableError && attempt < maxRetries) {
+                    const backoffDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Exponential backoff, max 10s
+                    this.logger.warn(`Retryable error getting status on attempt ${attempt}: ${errorMessage}. Retrying in ${backoffDelay}ms`);
+                    await this.delay(backoffDelay);
+                } else {
+                    this.logger.error(`Non-retryable error or max retries exceeded getting status: ${errorMessage}`);
+                    throw error;
+                }
+            }
+        }
+        
+        throw lastError;
+    }
+
+    /**
+     * Get result with retry logic
+     */
+    private async getResultWithRetry(model: string, params: any, maxRetries: number = 3): Promise<any> {
+        let lastError: any;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                this.logger.info(`Getting result for ${model} (attempt ${attempt}/${maxRetries})`);
+                return await fal.queue.result(model, params);
+            } catch (error: any) {
+                lastError = error;
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                
+                // Check if this is a retryable error
+                const isRetryableError = this.isRetryableError(errorMessage);
+                
+                if (isRetryableError && attempt < maxRetries) {
+                    const backoffDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Exponential backoff, max 10s
+                    this.logger.warn(`Retryable error getting result on attempt ${attempt}: ${errorMessage}. Retrying in ${backoffDelay}ms`);
+                    await this.delay(backoffDelay);
+                } else {
+                    this.logger.error(`Non-retryable error or max retries exceeded getting result: ${errorMessage}`);
+                    throw error;
+                }
+            }
+        }
+        
+        throw lastError;
+    }
+
+    /**
+     * Check if an error is retryable
+     */
+    private isRetryableError(errorMessage: string): boolean {
+        const retryablePatterns = [
+            'fetch failed',
+            'ECONNRESET',
+            'ENOTFOUND',
+            'ETIMEDOUT',
+            'timeout',
+            'Gateway Timeout',
+            '504',
+            '502',
+            '503',
+            'NetworkError',
+            'TypeError: fetch failed'
+        ];
+        
+        return retryablePatterns.some(pattern => 
+            errorMessage.toLowerCase().includes(pattern.toLowerCase())
+        );
     }
 
     /**

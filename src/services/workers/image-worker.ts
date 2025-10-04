@@ -84,6 +84,7 @@ export class ImageWorker {
             console.log(`Starting batch generation of ${data.prompts.length} prompts with 5 variants each for SongWithAnimal`);
             
             const allPromises = [];
+            const allErrors: Array<{ type: string; scene: number | string; variant?: number; error: string }> = [];
             
             for (let i = 0; i < data.prompts.length; i++) {
                 const prompt = data.prompts[i];
@@ -105,8 +106,10 @@ export class ImageWorker {
                             return { scene: i, variant, success: true };
                         })
                         .catch((error: any) => {
+                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                             console.error(`Failed to generate variant ${variant} for scene ${i}:`, error);
-                            return { scene: i, variant, success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+                            allErrors.push({ type: 'scene', scene: i, variant, error: errorMessage });
+                            return { scene: i, variant, success: false, error: errorMessage };
                         });
                     
                     allPromises.push(imagePromise);
@@ -127,32 +130,28 @@ export class ImageWorker {
                     const frame = data.additional_frames[i];
                     const combinedPrompt = `${frame.group_image_prompt}`;
                     
-                    // Создаем подпапку для каждого additional frame
-                    const frameFolderPath = path.join(folderPath, `additional_frame_${frame.index}`);
-                    await this.fileService.createFolder(frameFolderPath);
-                    
                     console.log(`Starting additional frame ${frame.index}: ${frame.group_image_prompt.substring(0, 100)}...`);
                     
-                    // Генерируем 5 вариантов для каждого additional frame
-                    for (let variant = 1; variant <= 5; variant++) {
-                        const imgPath = path.join(frameFolderPath, `variant_${variant}.png`);
-                        
-                        const imagePromise = this.imageService.generateImage(combinedPrompt, imgPath, 'isSongWithAnimal', path.basename(filePath))
-                            .then(() => {
-                                console.log(`Successfully generated variant ${variant} for additional frame ${frame.index}`);
-                                return { scene: `additional_frame_${frame.index}`, variant, success: true };
-                            })
-                            .catch((error: any) => {
-                                console.error(`Failed to generate variant ${variant} for additional frame ${frame.index}:`, error);
-                                return { scene: `additional_frame_${frame.index}`, variant, success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-                            });
-                        
-                        allPromises.push(imagePromise);
-                    }
+                    // Генерируем одно изображение для каждого additional frame в корне папки
+                    const imgPath = path.join(folderPath, `additional_frame_${frame.index}.png`);
                     
-                    // Добавляем задержку в 5 секунд перед отправкой следующей пачки additional frames
+                    const imagePromise = this.imageService.generateImage(combinedPrompt, imgPath, 'isSongWithAnimal', path.basename(filePath))
+                        .then(() => {
+                            console.log(`Successfully generated additional frame ${frame.index}`);
+                            return { scene: `additional_frame_${frame.index}`, success: true };
+                        })
+                        .catch((error: any) => {
+                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                            console.error(`Failed to generate additional frame ${frame.index}:`, error);
+                            allErrors.push({ type: 'additional_frame', scene: `additional_frame_${frame.index}`, error: errorMessage });
+                            return { scene: `additional_frame_${frame.index}`, success: false, error: errorMessage };
+                        });
+                    
+                    allPromises.push(imagePromise);
+                    
+                    // Добавляем задержку в 5 секунд перед отправкой следующего additional frame
                     if (i < data.additional_frames.length - 1) {
-                        console.log(`Waiting 5 seconds before sending next additional frame batch...`);
+                        console.log(`Waiting 5 seconds before sending next additional frame...`);
                         await new Promise(resolve => setTimeout(resolve, 5000));
                     }
                 }
@@ -164,14 +163,14 @@ export class ImageWorker {
 
             // Проверяем, сколько изображений удалось сгенерировать
             const regularImagesCount = data.prompts.length * 5; // 5 вариантов для каждого промпта
-            const additionalImagesCount = data.additional_frames ? data.additional_frames.length * 5 : 0; // 5 вариантов для каждого additional frame
+            const additionalImagesCount = data.additional_frames ? data.additional_frames.length : 0; // 1 изображение для каждого additional frame
             const totalCount = regularImagesCount + additionalImagesCount;
             const successfulCount = imageResults.filter((r: any) => r.success).length;
             
             console.log(`Generated ${successfulCount}/${totalCount} images successfully for SongWithAnimal`);
             console.log(`  Regular scenes: ${data.prompts.length} scenes × 5 variants = ${regularImagesCount} images`);
             if (data.additional_frames) {
-                console.log(`  Additional frames: ${data.additional_frames.length} frames × 5 variants = ${additionalImagesCount} images`);
+                console.log(`  Additional frames: ${data.additional_frames.length} frames × 1 image = ${additionalImagesCount} images`);
             }
             
             // Детальное логирование результатов по сценам
@@ -197,32 +196,42 @@ export class ImageWorker {
                     const frame = data.additional_frames[i];
                     const frameResults = imageResults.filter((r: any) => r.scene === `additional_frame_${frame.index}`);
                     const frameSuccessCount = frameResults.filter((r: any) => r.success).length;
-                    console.log(`  Additional Frame ${frame.index}: ${frameSuccessCount}/5 variants generated`);
+                    console.log(`  Additional Frame ${frame.index}: ${frameSuccessCount}/1 image generated`);
                     
-                    // Детали по вариантам
+                    // Детали по результату
                     frameResults.forEach((result: any) => {
                         if (result.success) {
-                            console.log(`    Variant ${result.variant}: ✅ Success`);
+                            console.log(`    ✅ Success`);
                         } else {
-                            console.log(`    Variant ${result.variant}: ❌ Failed - ${result.error || 'Unknown error'}`);
+                            console.log(`    ❌ Failed - ${result.error || 'Unknown error'}`);
                         }
                     });
                 }
             }
             
-            // Если хотя бы одно изображение сгенерировано, считаем обработку успешной
-            if (successfulCount > 0) {
-                // Перенести папку в processed (блокировка будет автоматически удалена)
+            // Принимаем решение о судьбе папки на основе собранных ошибок
+            if (allErrors.length > 0) {
+                console.warn(`Image generation completed with ${allErrors.length} errors:`);
+                allErrors.forEach(error => {
+                    if (error.variant) {
+                        console.warn(`  ${error.type} ${error.scene} variant ${error.variant}: ${error.error}`);
+                    } else {
+                        console.warn(`  ${error.type} ${error.scene}: ${error.error}`);
+                    }
+                });
+                
+                // Если есть ошибки, перемещаем папку в failed
+                console.error(`Moving folder to failed due to ${allErrors.length} errors`);
+                await this.fileService.moveFailedFolder(folderName);
+            } else {
+                // Если нет ошибок, перенести папку в processed (блокировка будет автоматически удалена)
                 await this.fileService.moveProcessedFolder(folderName);
                 console.log(`Successfully processed song with animal images: ${filePath} (${successfulCount}/${totalCount} images)`);
-            } else {
-                // Если ни одно изображение не сгенерировано, перемещаем в failed (блокировка будет автоматически удалена)
-                throw new Error(`Failed to generate any images (0/${totalCount})`);
             }
         } catch (error) {
             console.error(`Error processing song with animal images file ${filePath}:`, error);
             
-            // В случае ошибки перемещаем в failed (блокировка будет автоматически удалена)
+            // В случае критической ошибки (не связанной с генерацией изображений) перемещаем в failed
             try {
                 await this.fileService.moveFailedFolder(folderName);
             } catch (moveError) {

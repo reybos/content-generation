@@ -290,11 +290,23 @@ export class VideoWorker {
                 throw new Error(`Mismatch between video_prompts count (${newFormatData.video_prompts.length}) and scene images count (${sceneImages.length})`);
             }
 
-            this.logger.info(`Found ${newFormatData.video_prompts.length} video prompts and ${sceneImages.length} scene images`);
+            // Получаем изображения additional frames
+            const additionalFrameImages = files.filter(file => file.match(/^additional_frame_\d+\.png$/));
+            const additionalFramesCount = newFormatData.additional_frames ? newFormatData.additional_frames.length : 0;
+            
+            if (additionalFramesCount > 0 && additionalFrameImages.length !== additionalFramesCount) {
+                throw new Error(`Mismatch between additional_frames count (${additionalFramesCount}) and additional frame images count (${additionalFrameImages.length})`);
+            }
 
-            // Обрабатываем видео батчами по 10
-            const batchSize = 10;
+            this.logger.info(`Found ${newFormatData.video_prompts.length} video prompts and ${sceneImages.length} scene images`);
+            if (additionalFramesCount > 0) {
+                this.logger.info(`Found ${additionalFramesCount} additional frames and ${additionalFrameImages.length} additional frame images`);
+            }
+
+            // Обрабатываем видео батчами по 12
+            const batchSize = 12;
             const totalVideos = newFormatData.video_prompts.length;
+            const allErrors: Array<{ type: string; index: number | string; error: string }> = [];
             
             this.logger.info(`Starting batch video generation: ${totalVideos} videos in batches of ${batchSize}`);
             
@@ -313,7 +325,8 @@ export class VideoWorker {
 
                     // Проверяем существование изображения
                     if (!await fs.pathExists(imagePath)) {
-                        throw new Error(`Image file not found: ${imagePath}`);
+                        allErrors.push({ type: 'scene', index: i, error: `Image file not found: ${imagePath}` });
+                        continue;
                     }
 
                     // Пропускаем если видео уже существует
@@ -337,6 +350,7 @@ export class VideoWorker {
                     }).catch(async (error) => {
                         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                         this.logger.error(`Failed to generate video for scene ${i}: ${errorMessage}`);
+                        allErrors.push({ type: 'scene', index: i, error: errorMessage });
                         return { index: i, success: false, error: errorMessage };
                     });
                     
@@ -351,22 +365,95 @@ export class VideoWorker {
                     const successfulCount = batchResults.filter(r => r.success).length;
                     this.logger.info(`Batch ${Math.floor(batchStart / batchSize) + 1} completed: ${successfulCount}/${currentBatch} videos generated successfully`);
                     
-                    // Проверяем неудачные генерации
+                    // Логируем неудачные генерации, но не выбрасываем ошибку
                     const failedResults = batchResults.filter(r => !r.success) as Array<{ index: number; success: boolean; error: string }>;
                     if (failedResults.length > 0) {
                         this.logger.warn(`Some videos failed in batch ${Math.floor(batchStart / batchSize) + 1}:`);
                         failedResults.forEach(result => {
                             this.logger.warn(`  Scene ${result.index}: ❌ Failed - ${result.error}`);
                         });
-                        
-                        // Если любой видео в батче не удался, выбрасываем ошибку
-                        throw new Error(`Batch ${Math.floor(batchStart / batchSize) + 1} failed: ${failedResults.length} videos failed`);
                     }
                 }
             }
 
-            this.logger.info(`All videos generated successfully, marking as completed`);
-            await this.stateService.markCompleted(folderPath);
+            // Обрабатываем additional frames если они есть
+            if (additionalFramesCount > 0) {
+                this.logger.info(`Starting additional frames video generation: ${additionalFramesCount} additional frames`);
+                
+                const additionalFramePromises = [];
+                
+                for (let i = 0; i < additionalFramesCount; i++) {
+                    const frame = newFormatData.additional_frames[i];
+                    const imagePath = path.join(folderPath, `additional_frame_${frame.index}.png`);
+                    const videoPath = path.join(folderPath, `additional_frame_${frame.index}.mp4`);
+
+                    // Проверяем существование изображения
+                    if (!await fs.pathExists(imagePath)) {
+                        allErrors.push({ type: 'additional_frame', index: frame.index, error: `Additional frame image file not found: ${imagePath}` });
+                        continue;
+                    }
+
+                    // Пропускаем если видео уже существует
+                    if (await fs.pathExists(videoPath)) {
+                        this.logger.info(`Video already exists for additional frame ${frame.index}, skipping`);
+                        continue;
+                    }
+
+                    this.logger.info(`Adding additional frame ${frame.index} for video generation`);
+                    
+                    const videoPromise = this.videoService.generateVideo(
+                        frame.group_video_prompt,
+                        imagePath,
+                        videoPath,
+                        6 // duration
+                    ).then(async (videoResult) => {
+                        // Сохраняем мета-информацию о видео
+                        await this.saveVideoMeta(folderPath, `additional_frame_${frame.index}`, videoResult);
+                        this.logger.info(`Successfully generated video for additional frame ${frame.index}`);
+                        return { index: `additional_frame_${frame.index}`, success: true };
+                    }).catch(async (error) => {
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                        this.logger.error(`Failed to generate video for additional frame ${frame.index}: ${errorMessage}`);
+                        allErrors.push({ type: 'additional_frame', index: frame.index, error: errorMessage });
+                        return { index: `additional_frame_${frame.index}`, success: false, error: errorMessage };
+                    });
+                    
+                    additionalFramePromises.push(videoPromise);
+                }
+                
+                // Ждем завершения генерации additional frames
+                if (additionalFramePromises.length > 0) {
+                    const additionalFrameResults = await Promise.all(additionalFramePromises);
+                    
+                    // Логируем результаты additional frames
+                    const successfulCount = additionalFrameResults.filter(r => r.success).length;
+                    this.logger.info(`Additional frames completed: ${successfulCount}/${additionalFramePromises.length} videos generated successfully`);
+                    
+                    // Логируем неудачные генерации, но не выбрасываем ошибку
+                    const failedResults = additionalFrameResults.filter(r => !r.success) as Array<{ index: string; success: boolean; error: string }>;
+                    if (failedResults.length > 0) {
+                        this.logger.warn(`Some additional frame videos failed:`);
+                        failedResults.forEach(result => {
+                            this.logger.warn(`  Additional Frame ${result.index}: ❌ Failed - ${result.error}`);
+                        });
+                    }
+                }
+            }
+
+            // Принимаем решение о судьбе папки на основе собранных ошибок
+            if (allErrors.length > 0) {
+                this.logger.warn(`Video generation completed with ${allErrors.length} errors:`);
+                allErrors.forEach(error => {
+                    this.logger.warn(`  ${error.type} ${error.index}: ${error.error}`);
+                });
+                
+                // Если есть ошибки, перемещаем папку в failed
+                this.logger.error(`Moving folder to failed due to ${allErrors.length} errors`);
+                await this.fileService.moveFailedFolder(path.basename(folderPath));
+            } else {
+                this.logger.info(`All videos generated successfully, marking as completed`);
+                await this.stateService.markCompleted(folderPath);
+            }
             
         } catch (error: unknown) {
             this.logger.error(`Error processing song with animal folder: ${folderPath}`, error);
