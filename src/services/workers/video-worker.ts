@@ -290,12 +290,13 @@ export class VideoWorker {
                 throw new Error(`Mismatch between video_prompts count (${newFormatData.video_prompts.length}) and scene images count (${sceneImages.length})`);
             }
 
-            // Получаем изображения additional frames
-            const additionalFrameImages = files.filter(file => file.match(/^additional_frame_\d+\.png$/));
+            // Получаем изображения additional frames (теперь с вариантами)
+            const additionalFrameImages = files.filter(file => file.match(/^additional_frame_\d+_\d+\.png$/));
             const additionalFramesCount = newFormatData.additional_frames ? newFormatData.additional_frames.length : 0;
+            const expectedAdditionalFrameImagesCount = additionalFramesCount * 5; // 5 вариантов для каждого additional frame
             
-            if (additionalFramesCount > 0 && additionalFrameImages.length !== additionalFramesCount) {
-                throw new Error(`Mismatch between additional_frames count (${additionalFramesCount}) and additional frame images count (${additionalFrameImages.length})`);
+            if (additionalFramesCount > 0 && additionalFrameImages.length !== expectedAdditionalFrameImagesCount) {
+                throw new Error(`Mismatch between additional_frames count (${additionalFramesCount} × 5 = ${expectedAdditionalFrameImagesCount}) and additional frame images count (${additionalFrameImages.length})`);
             }
 
             this.logger.info(`Found ${newFormatData.video_prompts.length} video prompts and ${sceneImages.length} scene images`);
@@ -378,47 +379,51 @@ export class VideoWorker {
 
             // Обрабатываем additional frames если они есть
             if (additionalFramesCount > 0) {
-                this.logger.info(`Starting additional frames video generation: ${additionalFramesCount} additional frames`);
+                this.logger.info(`Starting additional frames video generation: ${additionalFramesCount} additional frames with 5 variants each`);
                 
                 const additionalFramePromises = [];
                 
                 for (let i = 0; i < additionalFramesCount; i++) {
                     const frame = newFormatData.additional_frames[i];
-                    const imagePath = path.join(folderPath, `additional_frame_${frame.index}.png`);
-                    const videoPath = path.join(folderPath, `additional_frame_${frame.index}.mp4`);
-
-                    // Проверяем существование изображения
-                    if (!await fs.pathExists(imagePath)) {
-                        allErrors.push({ type: 'additional_frame', index: frame.index, error: `Additional frame image file not found: ${imagePath}` });
-                        continue;
-                    }
-
-                    // Пропускаем если видео уже существует
-                    if (await fs.pathExists(videoPath)) {
-                        this.logger.info(`Video already exists for additional frame ${frame.index}, skipping`);
-                        continue;
-                    }
-
-                    this.logger.info(`Adding additional frame ${frame.index} for video generation`);
                     
-                    const videoPromise = this.videoService.generateVideo(
-                        frame.group_video_prompt,
-                        imagePath,
-                        videoPath,
-                        6 // duration
-                    ).then(async (videoResult) => {
-                        // Сохраняем мета-информацию о видео
-                        await this.saveVideoMeta(folderPath, `additional_frame_${frame.index}`, videoResult);
-                        this.logger.info(`Successfully generated video for additional frame ${frame.index}`);
-                        return { index: `additional_frame_${frame.index}`, success: true };
-                    }).catch(async (error) => {
-                        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                        this.logger.error(`Failed to generate video for additional frame ${frame.index}: ${errorMessage}`);
-                        allErrors.push({ type: 'additional_frame', index: frame.index, error: errorMessage });
-                        return { index: `additional_frame_${frame.index}`, success: false, error: errorMessage };
-                    });
-                    
-                    additionalFramePromises.push(videoPromise);
+                    // Генерируем 5 вариантов для каждого additional frame
+                    for (let variant = 1; variant <= 5; variant++) {
+                        const imagePath = path.join(folderPath, `additional_frame_${frame.index}_${variant}.png`);
+                        const videoPath = path.join(folderPath, `additional_frame_${frame.index}_${variant}.mp4`);
+
+                        // Проверяем существование изображения
+                        if (!await fs.pathExists(imagePath)) {
+                            allErrors.push({ type: 'additional_frame', index: `${frame.index}_${variant}`, error: `Additional frame image file not found: ${imagePath}` });
+                            continue;
+                        }
+
+                        // Пропускаем если видео уже существует
+                        if (await fs.pathExists(videoPath)) {
+                            this.logger.info(`Video already exists for additional frame ${frame.index} variant ${variant}, skipping`);
+                            continue;
+                        }
+
+                        this.logger.info(`Adding additional frame ${frame.index} variant ${variant} for video generation`);
+                        
+                        const videoPromise = this.videoService.generateVideo(
+                            frame.group_video_prompt,
+                            imagePath,
+                            videoPath,
+                            6 // duration
+                        ).then(async (videoResult) => {
+                            // Сохраняем мета-информацию о видео
+                            await this.saveVideoMeta(folderPath, `additional_frame_${frame.index}_${variant}`, videoResult);
+                            this.logger.info(`Successfully generated video for additional frame ${frame.index} variant ${variant}`);
+                            return { index: `additional_frame_${frame.index}_${variant}`, success: true };
+                        }).catch(async (error) => {
+                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                            this.logger.error(`Failed to generate video for additional frame ${frame.index} variant ${variant}: ${errorMessage}`);
+                            allErrors.push({ type: 'additional_frame', index: `${frame.index}_${variant}`, error: errorMessage });
+                            return { index: `additional_frame_${frame.index}_${variant}`, success: false, error: errorMessage };
+                        });
+                        
+                        additionalFramePromises.push(videoPromise);
+                    }
                 }
                 
                 // Ждем завершения генерации additional frames
