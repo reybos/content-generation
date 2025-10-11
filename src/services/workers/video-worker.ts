@@ -290,28 +290,12 @@ export class VideoWorker {
                 throw new Error(`Mismatch between video_prompts count (${newFormatData.video_prompts.length}) and scene images count (${sceneImages.length})`);
             }
 
-            // Получаем изображения additional frames из подпапок
+            // Получаем изображения additional frames из корня папки (уже отобранные вручную)
+            const additionalFrameImages = files.filter(file => file.match(/^additional_frame_\d+\.png$/));
             const additionalFramesCount = newFormatData.additional_frames ? newFormatData.additional_frames.length : 0;
-            let additionalFrameImages: string[] = [];
             
-            if (additionalFramesCount > 0) {
-                // Проверяем наличие папок для каждой группы additional frames
-                for (let i = 0; i < additionalFramesCount; i++) {
-                    const frame = newFormatData.additional_frames[i];
-                    const additionalFrameFolder = path.join(folderPath, `additional_frame_${frame.index}`);
-                    
-                    if (await fs.pathExists(additionalFrameFolder)) {
-                        const folderFiles = await fs.readdir(additionalFrameFolder);
-                        const frameImages = folderFiles.filter(file => file.match(/^additional_frame_\d+_\d+\.png$/));
-                        additionalFrameImages = additionalFrameImages.concat(frameImages.map(file => path.join(additionalFrameFolder, file)));
-                    }
-                }
-                
-                const expectedAdditionalFrameImagesCount = additionalFramesCount * 5; // 5 вариантов для каждого additional frame
-                
-                if (additionalFrameImages.length !== expectedAdditionalFrameImagesCount) {
-                    throw new Error(`Mismatch between additional_frames count (${additionalFramesCount} × 5 = ${expectedAdditionalFrameImagesCount}) and additional frame images count (${additionalFrameImages.length})`);
-                }
+            if (additionalFramesCount > 0 && additionalFrameImages.length !== additionalFramesCount) {
+                throw new Error(`Mismatch between additional_frames count (${additionalFramesCount}) and additional frame images count (${additionalFrameImages.length})`);
             }
 
             this.logger.info(`Found ${newFormatData.video_prompts.length} video prompts and ${sceneImages.length} scene images`);
@@ -401,13 +385,9 @@ export class VideoWorker {
                 for (let i = 0; i < additionalFramesCount; i++) {
                     const frame = newFormatData.additional_frames[i];
                     
-                    // Создаем папку для группы additional frames
-                    const additionalFrameFolder = path.join(folderPath, `additional_frame_${frame.index}`);
-                    await fs.ensureDir(additionalFrameFolder);
-                    
-                    // Используем первый вариант изображения для генерации видео
-                    const imagePath = path.join(additionalFrameFolder, `additional_frame_${frame.index}_1.png`);
-                    const videoPath = path.join(additionalFrameFolder, `additional_frame_${frame.index}.mp4`);
+                    // Используем отобранное вручную изображение из корня папки
+                    const imagePath = path.join(folderPath, `additional_frame_${frame.index}.png`);
+                    const videoPath = path.join(folderPath, `additional_frame_${frame.index}.mp4`);
 
                     // Проверяем существование изображения
                     if (!await fs.pathExists(imagePath)) {
