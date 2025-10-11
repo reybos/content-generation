@@ -132,9 +132,13 @@ export class ImageWorker {
                     
                     console.log(`Starting additional frame ${frame.index}: ${frame.group_image_prompt.substring(0, 100)}...`);
                     
-                    // Генерируем 5 вариантов для каждого additional frame в корне папки
+                    // Создаем подпапку для каждого additional frame
+                    const additionalFrameFolderPath = path.join(folderPath, `additional_frame_${frame.index}`);
+                    await this.fileService.createFolder(additionalFrameFolderPath);
+                    
+                    // Генерируем 5 вариантов для каждого additional frame в подпапке
                     for (let variant = 1; variant <= 5; variant++) {
-                        const imgPath = path.join(folderPath, `additional_frame_${frame.index}_${variant}.png`);
+                        const imgPath = path.join(additionalFrameFolderPath, `additional_frame_${frame.index}_${variant}.png`);
                         
                         const imagePromise = this.imageService.generateImage(combinedPrompt, imgPath, 'isSongWithAnimal', path.basename(filePath))
                             .then(() => {
