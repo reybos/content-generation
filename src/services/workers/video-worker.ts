@@ -407,7 +407,7 @@ export class VideoWorker {
                         frame.group_video_prompt,
                         imagePath,
                         videoPath,
-                        6 // duration
+                        10 // duration
                     ).then(async (videoResult) => {
                         // Сохраняем мета-информацию о видео
                         await this.saveVideoMeta(folderPath, `additional_frame_${frame.index}`, videoResult);
