@@ -1,192 +1,75 @@
 # Content Generation System
 
-Система для автоматической генерации изображений и видео на основе JSON-конфигураций.
+Automated system for generating images and videos from JSON configuration files using AI models.
 
-## 🏗️ Архитектура
+## Installation
 
-Система построена на принципе разделения ответственностей:
-
-- **UniversalWorker** - генерация изображений из JSON файлов
-- **VideoWorker** - генерация видео из папок с изображениями
-- **ContentGenerationWorker** - координация workflow между воркерами
-
-## 🚀 Быстрый старт
-
-### Установка зависимостей
 ```bash
 npm install
 ```
 
-### Запуск полного workflow
+## Configuration
+
+Create a `.env` file in the project root with your fal.ai API key:
+
+```bash
+FAL_KEY=your_api_key_here
+```
+
+### Directory Structure
+
+By default, the system uses a `generations/` directory in the project root with the following structure:
+
+```
+generations/
+├── unprocessed/    # Place JSON files here for processing
+├── in-progress/    # Files being processed (automatically managed)
+├── processed/      # Successfully processed content
+└── failed/         # Failed processing attempts
+```
+
+To customize the base directory path, add one of these to your `.env` file:
+
+```bash
+# Absolute path
+GENERATIONS_DIR_PATH=/absolute/path/to/your/directory
+
+# Or relative path from project root
+GENERATIONS_DIR_RELATIVE_PATH=./custom/path
+```
+
+## Running
+
+Start the web UI server:
+
 ```bash
 npm run start
 ```
 
-### Запуск только генерации изображений
-```typescript
-import { UniversalWorker } from './src/services';
-const imageWorker = new UniversalWorker();
-await imageWorker.start();
-```
+The server will start on `http://localhost:3000` (or the port specified in the `PORT` environment variable).
 
-### Запуск только генерации видео
-```typescript
-import { VideoWorker } from './src/services';
-const videoWorker = new VideoWorker();
-await videoWorker.start();
-```
+## Usage
 
-## 📁 Структура проекта
+1. **Place JSON files** in the `generations/unprocessed/` directory (or your custom path)
+2. **Open the web UI** at `http://localhost:3000`
+3. **Configure workers** using the web interface:
+   - Number of workers
+   - Image aspect ratio (9:16 or 16:9)
+   - Video model selection
+   - Batch size and other parameters
+4. **Click "Start Workers"** to begin processing
+5. **Processed content** will be available in the `generations/processed/` directory (or your custom path)
 
-```
-src/
-├── services/
-│   ├── index.ts                    # Главный экспорт всех сервисов
-│   ├── workers/                    # Воркеры (основная логика)
-│   │   ├── universal-worker.ts     # Генерация изображений
-│   │   └── video-worker.ts         # Генерация видео
-│   ├── core/                       # Базовые сервисы
-│   │   ├── file-service.ts         # Работа с файлами
-│   │   ├── lock-service.ts         # Система блокировок
-│   │   └── state-service.ts        # Управление состоянием
-│   └── generators/                 # Сервисы генерации
-│       ├── image-service.ts        # Генерация изображений
-│       └── video-service.ts        # Генерация видео
-├── types/                          # TypeScript типы
-├── utils/                          # Утилиты
-├── worker.ts                       # Главный координатор
-├── test-structure.ts               # Тесты структуры
-└── documentation/                  # Документация
-```
+The system automatically:
+- Detects JSON file format
+- Generates images from prompts
+- Creates videos from generated images
+- Handles errors and retries
 
-### 🏗️ Логика организации services/
+## Supported Formats
 
-- **`workers/`** - содержит основную бизнес-логику (воркеры)
-- **`core/`** - содержит базовые сервисы, используемые всеми остальными
-- **`generators/** - содержит сервисы для генерации контента
-- **`index.ts`** - централизованный экспорт всех сервисов
+The system supports multiple JSON formats and automatically detects the format type. Place your JSON files in the `generations/unprocessed/` directory and the system will process them accordingly.
 
-## 🔄 Workflow
+## License
 
-1. **JSON файлы** помещаются в папку `unprocessed/`
-2. **UniversalWorker** читает JSON и генерирует изображения
-3. **Папки с изображениями** перемещаются в `processed/`
-4. **VideoWorker** находит папки с изображениями и генерирует видео
-5. **Готовые папки** перемещаются в `processed/`
-
-## 📊 Поддерживаемые форматы
-
-### Новый формат (NewFormatWithArrays)
-```json
-{
-  "global_style": "cartoon style",
-  "prompts": [
-    {"prompt": "A cat saying hello"},
-    {"prompt": "A dog saying goodbye"}
-  ],
-  "video_prompts": [
-    {"video_prompt": "Cat animation"},
-    {"video_prompt": "Dog animation"}
-  ],
-  "titles": ["Cat Video", "Dog Video"],
-  "descriptions": ["Funny cat", "Funny dog"],
-  "hashtags": ["#cat", "#dog"]
-}
-```
-
-### Старый формат (GenerationData)
-```json
-{
-  "script": "Story script",
-  "narration": "Narration text",
-  "enhancedMedia": [
-    {
-      "scene": 0,
-      "image_prompt": "A cat",
-      "video_prompt": "Cat animation",
-      "duration": 6
-    }
-  ]
-}
-```
-
-## ⚙️ Конфигурация
-
-### Переменные окружения
-```bash
-# Пути к папкам
-UNPROCESSED_DIR=./unprocessed
-IN_PROGRESS_DIR=./in-progress
-PROCESSED_DIR=./processed
-FAILED_DIR=./failed
-
-# Настройки воркеров
-MAX_RETRIES=5
-BATCH_SIZE=4
-```
-
-## 🧪 Тестирование
-
-### Запуск тестов архитектуры
-```bash
-npx ts-node src/test-architecture.ts
-```
-
-### Проверка работоспособности
-```bash
-# Тест генерации изображений
-npx ts-node src/example-usage.ts
-
-# Выберите нужный режим в файле
-```
-
-## 📈 Мониторинг
-
-Система ведет логи в следующих местах:
-- Консоль (основные события)
-- `worker.log` в каждой папке (детальные логи)
-- `meta.json` в каждой папке (мета-информация)
-
-## 🔧 Разработка
-
-### Добавление нового формата
-1. Создайте новый тип в `src/types/`
-2. Добавьте логику определения формата в `UniversalWorker`
-3. Реализуйте обработку в соответствующем методе
-
-### Добавление нового воркера
-1. Создайте класс в `src/services/`
-2. Добавьте экспорт в `src/services/index.ts`
-3. Интегрируйте в `ContentGenerationWorker`
-
-## 🚨 Устранение неполадок
-
-### Частые проблемы
-- **Файлы не обрабатываются**: Проверьте права доступа к папкам
-- **Ошибки генерации**: Проверьте логи в `worker.log`
-- **Блокировки**: Удалите файлы `.lock` в папках
-
-### Логи
-```bash
-# Просмотр логов воркера
-tail -f unprocessed/folder_name/worker.log
-
-# Просмотр системных логов
-tail -f logs/system.log
-```
-
-## 📚 Документация
-
-- [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md) - Детальное описание рефакторинга
-- [documentation/](documentation/) - Техническая документация
-
-## 🤝 Вклад в проект
-
-1. Форкните репозиторий
-2. Создайте ветку для новой функции
-3. Внесите изменения
-4. Создайте Pull Request
-
-## 📄 Лицензия
-
-MIT License - см. файл [LICENSE](LICENSE) для деталей.
+MIT License
