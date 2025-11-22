@@ -9,11 +9,12 @@ import { Logger } from './utils';
 import { fal } from '@fal-ai/client';
 
 // Configure the fal.ai API key (unless in mock mode)
+const logger = new Logger();
 if (process.env.MOCK_API === 'true') {
-    console.log('Running in mock mode — no API key required.');
+    logger.info('Running in mock mode — no API key required.');
 } else {
     if (!process.env.FAL_KEY) {
-        console.error('ERROR: FAL_KEY environment variable is not set. Please set it to your fal.ai API key.');
+        logger.error('ERROR: FAL_KEY environment variable is not set. Please set it to your fal.ai API key.');
         process.exit(1);
     }
 
@@ -26,7 +27,6 @@ if (process.env.MOCK_API === 'true') {
  * Main entry point for the content generation worker
  */
 async function main(): Promise<void> {
-    const logger = new Logger();
 
     try {
         // Number of worker instances to create
@@ -72,7 +72,7 @@ async function main(): Promise<void> {
 
 // Start the application
 main().catch((error) => {
-    console.error('Unhandled error:', error);
+    logger.error('Unhandled error:', error);
     process.exit(1);
 });
 

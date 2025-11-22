@@ -4,6 +4,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { GenerationData, NewFormatData, ContentData } from '../../types';
 import { LockService } from './lock-service';
+import { Logger } from '../../utils';
 
 // Helper to resolve the generations base directory
 function resolveGenerationsBaseDir(): string {
@@ -29,6 +30,7 @@ export class FileService {
     private processedDir: string;
     private failedDir: string;
     private lockService: LockService;
+    private logger: Logger;
 
     constructor() {
         this.baseDir = resolveGenerationsBaseDir();
@@ -37,6 +39,7 @@ export class FileService {
         this.processedDir = path.join(this.baseDir, 'processed');
         this.failedDir = path.join(this.baseDir, 'failed');
         this.lockService = new LockService();
+        this.logger = new Logger();
     }
 
     public getInProgressDir(): string {
@@ -54,7 +57,7 @@ export class FileService {
                 .filter((file: string) => file.endsWith('.json'))
                 .map((file: string) => path.join(this.unprocessedDir, file));
         } catch (error) {
-            console.error('Error reading unprocessed directory:', error);
+            this.logger.error('Error reading unprocessed directory:', error);
             return [];
         }
     }
@@ -71,7 +74,7 @@ export class FileService {
             }
             return folders;
         } catch (error) {
-            console.error('Error reading unprocessed directory for folders:', error);
+            this.logger.error('Error reading unprocessed directory for folders:', error);
             return [];
         }
     }
@@ -99,7 +102,7 @@ export class FileService {
         try {
             // Check if source folder exists before attempting to move
             if (!await fs.pathExists(sourcePath)) {
-                console.warn(`Source folder does not exist, skipping move: ${sourcePath}`);
+                this.logger.warn(`Source folder does not exist, skipping move: ${sourcePath}`);
                 return;
             }
 
@@ -110,7 +113,7 @@ export class FileService {
             
             // Double-check source still exists after lock removal
             if (!await fs.pathExists(sourcePath)) {
-                console.warn(`Source folder was removed during lock cleanup, skipping move: ${sourcePath}`);
+                this.logger.warn(`Source folder was removed during lock cleanup, skipping move: ${sourcePath}`);
                 return;
             }
             
@@ -126,7 +129,7 @@ export class FileService {
         try {
             // Check if source folder exists before attempting to move
             if (!await fs.pathExists(sourcePath)) {
-                console.warn(`Source folder does not exist, skipping move: ${sourcePath}`);
+                this.logger.warn(`Source folder does not exist, skipping move: ${sourcePath}`);
                 return;
             }
 
@@ -137,7 +140,7 @@ export class FileService {
             
             // Double-check source still exists after lock removal
             if (!await fs.pathExists(sourcePath)) {
-                console.warn(`Source folder was removed during lock cleanup, skipping move: ${sourcePath}`);
+                this.logger.warn(`Source folder was removed during lock cleanup, skipping move: ${sourcePath}`);
                 return;
             }
             
