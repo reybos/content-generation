@@ -85,16 +85,7 @@ export function isStudyWithEnhancedMedia(data: any): boolean {
  * @returns True if data is in halloweenTransform format
  */
 export function isHalloweenTransform(data: any, filename: string): boolean {
-    return data && 
-           Array.isArray(data.video_prompts) && 
-           data.video_prompts.length > 0 &&
-           data.video_prompts.every((vp: any) => 
-               typeof vp.prompt === 'string' && 
-               typeof vp.video_prompt === 'string' &&
-               typeof vp.line === 'string' &&
-               typeof vp.index === 'number'
-           ) &&
-           filename.toLowerCase().includes('halloweentransform');
+    return filename.toLowerCase().includes('halloweentransform');
 }
 
 /* END GENAI */

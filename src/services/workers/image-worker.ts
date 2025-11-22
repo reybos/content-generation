@@ -1,8 +1,8 @@
 import { FileService } from '../core/file-service';
 import { LockService } from '../core/lock-service';
 import { ImageService } from '../generators/image-service';
-import { GenerationData, NewFormatWithArraysData, ContentData } from '../../types';
-import { isSingleVideoFormat, isSongWithAnimal, isStudy, isHalloweenTransform } from '../../utils';
+import { NewFormatWithArraysData, ContentData } from '../../types';
+import { isSongWithAnimal, isHalloweenTransform } from '../../utils';
 import { Logger } from '../../utils';
 import * as path from 'path';
 import * as fs from 'fs-extra';
@@ -46,12 +46,6 @@ export class ImageWorker {
             this.logger.info(`Генерация картинок. Шортсы с животными по формату "The X says X"`);
             await this.processSongWithAnimalImages(filePath, data as NewFormatWithArraysData);
 
-        } else if (isStudy(data)) {
-            this.logger.info(`Генерация картинок. Формат обучения, с одним базовым изображением и связанным сюжетом`);
-            await this.processStudyImages(filePath, data as GenerationData);
-        } else if (isSingleVideoFormat(data)) {
-            this.logger.info(`Файл в формате single video (song + video_prompt), пропускаем - это для video worker`);
-            return;
         } else {
             this.logger.error(`Unknown format for file: ${filePath}`);
             this.logger.error(`Data: ${JSON.stringify(data)}`);
@@ -253,64 +247,5 @@ export class ImageWorker {
             }
         }
     }
-
-    private async processStudyImages(filePath: string, data: GenerationData): Promise<void> {
-        const firstScene = data.enhancedMedia?.find((media: any) => media.scene === 0);
-        if (!firstScene) {
-            this.logger.error(`No scene 0 in file: ${filePath}`);
-            return;
-        }
-        
-        const folderName = path.basename(filePath, path.extname(filePath));
-        const folderPath = path.join(this.fileService.getInProgressDir(), folderName);
-        
-        // Check if this folder is already being processed by a worker
-        if (await fs.pathExists(folderPath)) {
-            this.logger.info(`Folder ${folderName} already exists in in-progress, skipping to avoid conflicts with worker processing`);
-            return;
-        }
-
-        // Create folder BEFORE acquiring lock
-        await this.fileService.createFolder(folderPath);
-
-        const lockAcquired = await this.lockService.acquireLock(folderPath);
-        if (!lockAcquired) {
-            this.logger.warn(`Could not acquire lock for folder: ${folderPath}, skipping.`);
-            // Remove the created folder if we couldn't acquire the lock
-            await fs.remove(folderPath);
-            return;
-        }
-
-        try {
-            // Move JSON from unprocessed to the folder
-            const destJsonPath = path.join(folderPath, path.basename(filePath));
-            await fs.move(filePath, destJsonPath, { overwrite: false });
-            
-            // Generate 5 images in parallel
-            const imagePromises = [];
-            for (let i = 1; i <= 5; i++) {
-                const imgPath = path.join(folderPath, `base_0_${i}.png`);
-                imagePromises.push(this.imageService.generateImage(firstScene.image_prompt, imgPath, path.basename(filePath)));
-            }
-            await Promise.all(imagePromises);
-            
-            // Move folder to processed (lock will be automatically removed)
-            await this.fileService.moveProcessedFolder(folderName);
-            
-            this.logger.info(`Successfully processed study format file: ${filePath}`);
-        } catch (error) {
-            this.logger.error(`Error processing study format file ${filePath}:`, error);
-            
-            // In case of error, move to failed (lock will be automatically removed)
-            try {
-                await this.fileService.moveFailedFolder(folderName);
-            } catch (moveError) {
-                this.logger.error(`Failed to move folder to failed: ${folderName}`, moveError);
-            }
-        }
-    }
-
-
-
 
 }
