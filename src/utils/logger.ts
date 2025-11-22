@@ -31,17 +31,6 @@ export class Logger {
     }
 
     /**
-     * Log a debug message
-     * @param message The message to log
-     * @param data Optional data to include in the log
-     */
-    public debug(message: string, data?: unknown): void {
-        if (process.env.DEBUG) {
-            this.log('DEBUG', message, data);
-        }
-    }
-
-    /**
      * Internal method to format and output log messages
      * @param level The log level
      * @param message The message to log

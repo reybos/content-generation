@@ -16,36 +16,6 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Generate a unique ID
- * @returns A unique string ID
- */
-export function generateId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
-/**
- * Format a date as an ISO string without milliseconds
- * @param date The date to format
- * @returns Formatted date string
- */
-export function formatDate(date: Date = new Date()): string {
-    return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
-}
-
-/**
- * Truncate a string to the specified length
- * @param str The string to truncate
- * @param maxLength Maximum length of the string
- * @returns Truncated string
- */
-export function truncate(str: string, maxLength: number): string {
-    if (str.length <= maxLength) {
-        return str;
-    }
-    return `${str.substring(0, maxLength - 3)}...`;
-}
-
-/**
  * Check if data is in single video format (song + video_prompt)
  * @param data The data to check
  * @returns True if data is in single video format
@@ -106,6 +76,25 @@ export function isSongWithAnimalWithVideoPrompts(data: any): boolean {
  */
 export function isStudyWithEnhancedMedia(data: any): boolean {
     return data && data.enhancedMedia && Array.isArray(data.enhancedMedia) && data.enhancedMedia.length > 0;
+}
+
+/**
+ * Check if data is in halloweenTransform format
+ * @param data The data to check
+ * @param filename The filename to check for halloweenTransform pattern
+ * @returns True if data is in halloweenTransform format
+ */
+export function isHalloweenTransform(data: any, filename: string): boolean {
+    return data && 
+           Array.isArray(data.video_prompts) && 
+           data.video_prompts.length > 0 &&
+           data.video_prompts.every((vp: any) => 
+               typeof vp.prompt === 'string' && 
+               typeof vp.video_prompt === 'string' &&
+               typeof vp.line === 'string' &&
+               typeof vp.index === 'number'
+           ) &&
+           filename.toLowerCase().includes('halloweentransform');
 }
 
 /* END GENAI */

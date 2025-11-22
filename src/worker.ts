@@ -1,11 +1,7 @@
 /* START GENAI */
 
-import { GenerationData } from "./types";
-import { FileService, ImageService, VideoService, LockService, StateService, ImageWorker, VideoWorker } from "./services";
+import { FileService, ImageWorker, VideoWorker } from "./services";
 import { Logger, sleep } from "./utils";
-import * as path from "path";
-import * as fs from "fs-extra";
-import { promises as fsp } from "fs";
 
 /**
  * Coordinator worker for managing content generation workflow

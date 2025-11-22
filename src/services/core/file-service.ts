@@ -39,21 +39,14 @@ export class FileService {
         this.lockService = new LockService();
     }
 
-    public getUnprocessedDir(): string {
-        return this.unprocessedDir;
-    }
     public getInProgressDir(): string {
         return this.inProgressDir;
     }
-    public getProcessedDir(): string {
-        return this.processedDir;
-    }
-    public getFailedDir(): string {
-        return this.failedDir;
-    }
+
     public getBaseDir(): string {
         return this.baseDir;
     }
+
     public async getUnprocessedFiles(): Promise<string[]> {
         try {
             const files: string[] = await fs.readdir(this.unprocessedDir);
@@ -65,6 +58,7 @@ export class FileService {
             return [];
         }
     }
+
     public async getUnprocessedFolders(): Promise<string[]> {
         try {
             const entries: string[] = await fs.readdir(this.unprocessedDir);
@@ -81,6 +75,7 @@ export class FileService {
             return [];
         }
     }
+
     public async readFile(filePath: string): Promise<ContentData> {
         try {
             const content: string = await fs.readFile(filePath, { encoding: 'utf-8' });
@@ -89,10 +84,7 @@ export class FileService {
             throw new Error(`Failed to read file ${filePath}: ${error}`);
         }
     }
-    public createFolderName(filePath: string): string {
-        const fileName: string = path.basename(filePath, path.extname(filePath));
-        return path.join(this.inProgressDir, fileName);
-    }
+
     public async createFolder(folderPath: string): Promise<void> {
         try {
             await fs.ensureDir(folderPath);
@@ -100,18 +92,7 @@ export class FileService {
             throw new Error(`Failed to create folder ${folderPath}: ${error}`);
         }
     }
-    public async moveFile(source: string, destination: string): Promise<void> {
-        try {
-            const destDir: string = path.dirname(destination);
-            await fs.ensureDir(destDir);
-            await fs.move(source, destination, { overwrite: true });
-        } catch (error) {
-            throw new Error(`Failed to move file from ${source} to ${destination}: ${error}`);
-        }
-    }
-    public getFileName(filePath: string): string {
-        return path.basename(filePath);
-    }
+
     public async moveProcessedFolder(folderName: string): Promise<void> {
         const sourcePath: string = path.join(this.inProgressDir, path.basename(folderName));
         const destPath: string = path.join(this.processedDir, path.basename(folderName));

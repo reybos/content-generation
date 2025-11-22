@@ -104,22 +104,6 @@ export class LockService {
         }
     }
 
-    public async isLocked(folderPath: string): Promise<boolean> {
-        const lockFilePath = path.join(folderPath, '.lock');
-        
-        try {
-            if (!(await fs.pathExists(lockFilePath))) {
-                return false;
-            }
-
-            const isStale = await this.isLockStale(lockFilePath);
-            return !isStale; // Если блокировка не устарела, значит папка заблокирована
-        } catch (error) {
-            this.logger.error(`Error checking if folder is locked: ${folderPath}`, error);
-            return false; // В случае ошибки считаем, что папка не заблокирована
-        }
-    }
-
     private async isLockStale(lockFilePath: string): Promise<boolean> {
         try {
             if (!(await fs.pathExists(lockFilePath))) {
@@ -183,49 +167,6 @@ export class LockService {
         return this.workerId;
     }
 
-    public async findFoldersWithStaleLocks(baseDir: string): Promise<string[]> {
-        try {
-            const folders = await fs.readdir(baseDir);
-            const staleFolders: string[] = [];
-
-            for (const folder of folders) {
-                const folderPath = path.join(baseDir, folder);
-                const lockFilePath = path.join(folderPath, '.lock');
-
-                if ((await fs.stat(folderPath)).isDirectory() && await fs.pathExists(lockFilePath)) {
-                    if (await this.isLockStale(lockFilePath)) {
-                        staleFolders.push(folderPath);
-                    }
-                }
-            }
-
-            return staleFolders;
-        } catch (error) {
-            this.logger.error(`Error finding folders with stale locks in ${baseDir}`, error);
-            return [];
-        }
-    }
-
-    public async findFoldersWithoutLocks(baseDir: string): Promise<string[]> {
-        try {
-            const folders = await fs.readdir(baseDir);
-            const unlockFolders: string[] = [];
-
-            for (const folder of folders) {
-                const folderPath = path.join(baseDir, folder);
-                const lockFilePath = path.join(folderPath, '.lock');
-
-                if ((await fs.stat(folderPath)).isDirectory() && !(await fs.pathExists(lockFilePath))) {
-                    unlockFolders.push(folderPath);
-                }
-            }
-
-            return unlockFolders;
-        } catch (error) {
-            this.logger.error(`Error finding folders without locks in ${baseDir}`, error);
-            return [];
-        }
-    }
 }
 
 /* END GENAI */

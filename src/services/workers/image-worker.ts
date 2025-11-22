@@ -1,8 +1,8 @@
 import { FileService } from '../core/file-service';
 import { LockService } from '../core/lock-service';
 import { ImageService } from '../generators/image-service';
-import { GenerationData, NewFormatData, NewFormatWithVideoData, NewFormatWithArraysData, ContentData } from '../../types';
-import { isSingleVideoFormat, isSongWithAnimal, isStudy } from '../../utils';
+import { GenerationData, NewFormatWithArraysData, ContentData } from '../../types';
+import { isSingleVideoFormat, isSongWithAnimal, isStudy, isHalloweenTransform } from '../../utils';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 
@@ -40,7 +40,7 @@ export class ImageWorker {
         // 2. Определить формат и обработать соответственно
         console.log(`Processing file for image generation: ${filePath}`);
         
-        if (isSongWithAnimal(data)) {
+        if (isSongWithAnimal(data) || isHalloweenTransform(data, path.basename(filePath))) {
             console.log(`Генерация картинок. Шортсы с животными по формату "The X says X"`);
             await this.processSongWithAnimalImages(filePath, data as NewFormatWithArraysData);
 
@@ -80,21 +80,30 @@ export class ImageWorker {
             const destJsonPath = path.join(folderPath, path.basename(filePath));
             await fs.move(filePath, destJsonPath, { overwrite: false });
 
+            // Determine which prompts array to use based on format
+            const isHalloweenTransformFormat = isHalloweenTransform(data, path.basename(filePath));
+            const promptsToProcess = isHalloweenTransformFormat 
+                ? data.video_prompts.map((vp: any) => ({ prompt: vp.prompt, index: vp.index }))
+                : data.prompts.map((p: any, idx: number) => ({ prompt: p.prompt, index: idx }));
+
             // Генерировать картинки пачками по 5 с интервалом в 5 секунд между отправкой пачек
-            console.log(`Starting batch generation of ${data.prompts.length} prompts with 5 variants each for SongWithAnimal`);
+            console.log(`Starting batch generation of ${promptsToProcess.length} prompts with 5 variants each for SongWithAnimal`);
             
             const allPromises = [];
             const allErrors: Array<{ type: string; scene: number | string; variant?: number; error: string }> = [];
             
-            for (let i = 0; i < data.prompts.length; i++) {
-                const prompt = data.prompts[i];
-                const combinedPrompt = `${data.global_style} \n ${prompt.prompt}`;
+            for (let i = 0; i < promptsToProcess.length; i++) {
+                const prompt = promptsToProcess[i];
+                const combinedPrompt = isHalloweenTransformFormat 
+                    ? prompt.prompt 
+                    : `${data.global_style} \n ${prompt.prompt}`;
                 
                 // Создаем подпапку для каждого промпта
-                const promptFolderPath = path.join(folderPath, `scene_${i}`);
+                const sceneIndex = isHalloweenTransformFormat ? prompt.index : i;
+                const promptFolderPath = path.join(folderPath, `scene_${sceneIndex}`);
                 await this.fileService.createFolder(promptFolderPath);
                 
-                console.log(`Starting scene ${i}: ${prompt.prompt}`);
+                console.log(`Starting scene ${sceneIndex}: ${prompt.prompt}`);
                 
                 // Генерируем 5 вариантов для каждого промпта пачкой
                 for (let variant = 1; variant <= 5; variant++) {
@@ -102,21 +111,21 @@ export class ImageWorker {
                     
                     const imagePromise = this.imageService.generateImage(combinedPrompt, imgPath, 'isSongWithAnimal', path.basename(filePath))
                         .then(() => {
-                            console.log(`Successfully generated variant ${variant} for scene ${i}`);
-                            return { scene: i, variant, success: true };
+                            console.log(`Successfully generated variant ${variant} for scene ${sceneIndex}`);
+                            return { scene: sceneIndex, variant, success: true };
                         })
                         .catch((error: any) => {
                             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                            console.error(`Failed to generate variant ${variant} for scene ${i}:`, error);
-                            allErrors.push({ type: 'scene', scene: i, variant, error: errorMessage });
-                            return { scene: i, variant, success: false, error: errorMessage };
+                            console.error(`Failed to generate variant ${variant} for scene ${sceneIndex}:`, error);
+                            allErrors.push({ type: 'scene', scene: sceneIndex, variant, error: errorMessage });
+                            return { scene: sceneIndex, variant, success: false, error: errorMessage };
                         });
                     
                     allPromises.push(imagePromise);
                 }
                 
                 // Добавляем задержку в 5 секунд перед отправкой следующей пачки
-                if (i < data.prompts.length - 1) {
+                if (i < promptsToProcess.length - 1) {
                     console.log(`Waiting 5 seconds before sending next batch...`);
                     await new Promise(resolve => setTimeout(resolve, 5000));
                 }
@@ -164,23 +173,24 @@ export class ImageWorker {
             const imageResults = await Promise.all(allPromises);
 
             // Проверяем, сколько изображений удалось сгенерировать
-            const regularImagesCount = data.prompts.length * 5; // 5 вариантов для каждого промпта
+            const regularImagesCount = promptsToProcess.length * 5; // 5 вариантов для каждого промпта
             const additionalImagesCount = data.additional_frames ? data.additional_frames.length * 5 : 0; // 5 вариантов для каждого additional frame
             const totalCount = regularImagesCount + additionalImagesCount;
             const successfulCount = imageResults.filter((r: any) => r.success).length;
             
             console.log(`Generated ${successfulCount}/${totalCount} images successfully for SongWithAnimal`);
-            console.log(`  Regular scenes: ${data.prompts.length} scenes × 5 variants = ${regularImagesCount} images`);
+            console.log(`  Regular scenes: ${promptsToProcess.length} scenes × 5 variants = ${regularImagesCount} images`);
             if (data.additional_frames) {
                 console.log(`  Additional frames: ${data.additional_frames.length} frames × 5 variants = ${additionalImagesCount} images`);
             }
             
             // Детальное логирование результатов по сценам
             console.log('Image generation results:');
-            for (let i = 0; i < data.prompts.length; i++) {
-                const sceneResults = imageResults.filter((r: any) => r.scene === i);
+            for (let i = 0; i < promptsToProcess.length; i++) {
+                const sceneIndex = isHalloweenTransformFormat ? promptsToProcess[i].index : i;
+                const sceneResults = imageResults.filter((r: any) => r.scene === sceneIndex);
                 const sceneSuccessCount = sceneResults.filter((r: any) => r.success).length;
-                console.log(`  Scene ${i}: ${sceneSuccessCount}/5 variants generated`);
+                console.log(`  Scene ${sceneIndex}: ${sceneSuccessCount}/5 variants generated`);
                 
                 // Детали по вариантам
                 sceneResults.forEach((result: any) => {

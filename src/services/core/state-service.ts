@@ -145,18 +145,6 @@ export class StateService {
         }
     }
 
-    public async setCurrentScene(folderPath: string, sceneNumber: number): Promise<ProcessingState> {
-        try {
-            return await this.updateState(folderPath, {
-                currentScene: sceneNumber,
-                currentStage: ProcessingStage.PROCESSING_SCENES,
-            });
-        } catch (error) {
-            this.logger.error(`Failed to set current scene to ${sceneNumber} for ${folderPath}`, error);
-            throw error;
-        }
-    }
-
     public async markCompleted(folderPath: string): Promise<ProcessingState> {
         try {
             return await this.updateState(folderPath, {
@@ -220,55 +208,6 @@ export class StateService {
         }
     }
 
-    public async findFailedFolders(baseDir: string): Promise<string[]> {
-        try {
-            const folders = await fs.readdir(baseDir);
-            const failedFolders: string[] = [];
-
-            for (const folder of folders) {
-                const folderPath = path.join(baseDir, folder);
-                const statePath = path.join(folderPath, this.stateFileName);
-
-                if ((await fs.stat(folderPath)).isDirectory() && await fs.pathExists(statePath)) {
-                    const state = await this.getState(folderPath);
-                    if (state && state.currentStage === ProcessingStage.FAILED) {
-                        failedFolders.push(folderPath);
-                    }
-                }
-            }
-
-            return failedFolders;
-        } catch (error) {
-            this.logger.error(`Error finding failed folders in ${baseDir}`, error);
-            return [];
-        }
-    }
-
-    public async findIncompleteFolders(baseDir: string): Promise<string[]> {
-        try {
-            const folders = await fs.readdir(baseDir);
-            const incompleteFolders: string[] = [];
-
-            for (const folder of folders) {
-                const folderPath = path.join(baseDir, folder);
-                const statePath = path.join(folderPath, this.stateFileName);
-
-                if ((await fs.stat(folderPath)).isDirectory() && await fs.pathExists(statePath)) {
-                    const state = await this.getState(folderPath);
-                    if (state &&
-                        state.currentStage !== ProcessingStage.COMPLETED &&
-                        state.currentStage !== ProcessingStage.FAILED) {
-                        incompleteFolders.push(folderPath);
-                    }
-                }
-            }
-
-            return incompleteFolders;
-        } catch (error) {
-            this.logger.error(`Error finding incomplete folders in ${baseDir}`, error);
-            return [];
-        }
-    }
 }
 
 /* END GENAI */
