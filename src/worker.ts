@@ -2,6 +2,7 @@
 
 import { FileService, ImageWorker, VideoWorker } from "./services";
 import { Logger, sleep } from "./utils";
+import { WorkerConfig } from "./types";
 
 /**
  * Coordinator worker for managing content generation workflow
@@ -10,15 +11,20 @@ import { Logger, sleep } from "./utils";
 export class ContentGenerationWorker {
     private fileService = new FileService();
     private logger = new Logger();
+    private config?: Partial<WorkerConfig>;
 
     private isRunning = false;
+
+    constructor(config?: Partial<WorkerConfig>) {
+        this.config = config;
+    }
 
     public async start(): Promise<void> {
         this.logger.info("Starting content generation coordinator");
         this.isRunning = true;
 
-        const imageWorker = new ImageWorker();
-        const videoWorker = new VideoWorker();
+        const imageWorker = new ImageWorker(this.config);
+        const videoWorker = new VideoWorker(this.config);
 
         while (this.isRunning) {
             try {
@@ -58,6 +64,7 @@ export class ContentGenerationWorker {
     public stop(): void {
         this.logger.info("Stopping content generation coordinator");
         this.isRunning = false;
+        this.logger.info("Content generation coordinator stopped");
     }
 
 }

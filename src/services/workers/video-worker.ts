@@ -3,17 +3,21 @@ import { LockService } from '../core/lock-service';
 import { StateService } from '../core/state-service';
 import { VideoService, VideoGenerationTask, VideoGenerationResult } from '../generators/video-service';
 import { Logger, isHalloweenFile } from '../../utils';
-import { ContentType } from '../../types';
+import { ContentType, WorkerConfig } from '../../types';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 
 export class VideoWorker {
     private fileService = new FileService();
-    private videoService = new VideoService();
+    private videoService: VideoService;
     private lockService = new LockService();
     private stateService = new StateService();
     private logger = new Logger();
     private maxRetries = 5;
+
+    constructor(config?: Partial<WorkerConfig>) {
+        this.videoService = new VideoService(config);
+    }
 
     public async start(): Promise<void> {
         this.logger.info("Starting video generation worker");

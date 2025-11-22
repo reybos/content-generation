@@ -1,15 +1,20 @@
 import { FileService } from '../core/file-service';
 import { ImageService, ImageGenerationTask, ImageGenerationResult } from '../generators/image-service';
-import { ContentData, ContentType } from '../../types';
+import { ContentData, ContentType, WorkerConfig } from '../../types';
 import { isHalloweenFile, sleep } from '../../utils';
 import { Logger } from '../../utils';
 import * as path from 'path';
 
 export class ImageWorker {
     private fileService = new FileService();
-    private imageService = new ImageService();
+    private imageService: ImageService;
     private logger = new Logger();
-    private readonly VARIANTS_PER_SCENE = 5;
+    private readonly VARIANTS_PER_SCENE: number;
+
+    constructor(config?: Partial<WorkerConfig>) {
+        this.VARIANTS_PER_SCENE = config?.variantsPerScene ?? 5;
+        this.imageService = new ImageService(config);
+    }
 
     public async start(): Promise<void> {
         this.logger.info("Starting Universal Worker - Image Generation");

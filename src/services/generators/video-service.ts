@@ -3,7 +3,7 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { Logger, validatePromptLength } from '../../utils';
-import { ContentType } from '../../types';
+import { ContentType, WorkerConfig } from '../../types';
 import { FileService } from '../core/file-service';
 
 /**
@@ -37,14 +37,19 @@ export class VideoService {
     private fileService: FileService;
     private readonly POLLING_INTERVAL_MS = 15000; // 15 seconds
     private readonly MAX_WAIT_TIME_MS = 900000; // 15 minutes
-    private readonly VIDEO_MODEL = "fal-ai/minimax/hailuo-02/standard/image-to-video";
-    // private readonly VIDEO_MODEL = "fal-ai/minimax/hailuo-02/pro/image-to-video"; // only 6 seconds here
-    private readonly BATCH_SIZE = 12;
+    private readonly VIDEO_MODEL: string;
+    private readonly BATCH_SIZE: number;
     private readonly MAX_PROMPT_LENGTH = 1950;
+    private readonly MAIN_VIDEO_DURATION: number;
+    private readonly ADDITIONAL_SCENE_DURATION: number;
 
-    constructor() {
+    constructor(config?: Partial<WorkerConfig>) {
         this.logger = new Logger();
         this.fileService = new FileService();
+        this.VIDEO_MODEL = config?.videoModel ?? "fal-ai/minimax/hailuo-02/standard/image-to-video";
+        this.BATCH_SIZE = config?.batchSize ?? 12;
+        this.MAIN_VIDEO_DURATION = config?.mainVideoDuration ?? 6;
+        this.ADDITIONAL_SCENE_DURATION = config?.additionalSceneDuration ?? 10;
     }
 
     /**
@@ -528,7 +533,7 @@ export class VideoService {
                 imagePath: path.join(folderPath, `scene_${i}.png`),
                 prompt: videoPrompt.video_prompt,
                 outputPath: path.join(folderPath, `scene_${i}.mp4`),
-                duration: 6,
+                duration: this.MAIN_VIDEO_DURATION,
                 index: i
             });
         }
@@ -562,7 +567,7 @@ export class VideoService {
                     imagePath: path.join(folderPath, `additional_frame_${frame.index}.png`),
                     prompt: frame.group_video_prompt,
                     outputPath: path.join(folderPath, `additional_frame_${frame.index}.mp4`),
-                    duration: 10,
+                    duration: this.ADDITIONAL_SCENE_DURATION,
                     index: `additional_frame_${frame.index}`
                 });
             }

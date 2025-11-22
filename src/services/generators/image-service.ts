@@ -4,7 +4,7 @@ import { fal } from '@fal-ai/client';
 import fs from 'fs-extra';
 import path from 'path';
 import {Logger, HALLOWEEN_FILE_PATTERNS, isHalloweenFile, isHalloweenTransform, validatePromptLength} from '../../utils';
-import { ContentType, NewFormatWithArraysData, ContentData } from '../../types';
+import { ContentType, NewFormatWithArraysData, ContentData, WorkerConfig } from '../../types';
 import { FileService } from '../core/file-service';
 
 interface ImageGenerationStatus {
@@ -38,20 +38,31 @@ export class ImageService {
     private readonly DEFAULT_IMAGE_MODEL = 'fal-ai/minimax/image-01';
     private readonly HALLOWEEN_IMAGE_MODEL = 'fal-ai/imagen4/preview';
     private readonly MAX_PROMPT_LENGTH = 1950;
-    private readonly VARIANTS_PER_SCENE = 5;
+    private readonly VARIANTS_PER_SCENE: number;
+    private readonly ASPECT_RATIO: '9:16' | '16:9';
+    private readonly CUSTOM_IMAGE_MODEL?: string;
 
     /**
      * Create a new ImageService instance
      */
-    constructor() {
+    constructor(config?: Partial<WorkerConfig>) {
         this.logger = new Logger();
         this.fileService = new FileService();
+        this.VARIANTS_PER_SCENE = config?.variantsPerScene ?? 5;
+        this.ASPECT_RATIO = config?.aspectRatio ?? '9:16';
+        this.CUSTOM_IMAGE_MODEL = config?.imageModel;
     }
 
     /**
      * Determine the appropriate model based on filename
      */
     private getModelForGeneration(filename: string): string {
+        // If custom model is provided, use it
+        if (this.CUSTOM_IMAGE_MODEL) {
+            this.logger.info(`Using custom image model: ${this.CUSTOM_IMAGE_MODEL}`);
+            return this.CUSTOM_IMAGE_MODEL;
+        }
+        
         if (isHalloweenFile(filename)) {
             this.logger.info(`Using Halloween model for file: ${filename}`);
             return this.HALLOWEEN_IMAGE_MODEL;
@@ -75,8 +86,7 @@ export class ImageService {
         try {
             const inputParams: any = {
                 prompt,
-                aspect_ratio: '9:16',
-                // aspect_ratio: '16:9',
+                aspect_ratio: this.ASPECT_RATIO,
                 num_images: 1,
             };
 

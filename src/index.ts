@@ -6,6 +6,7 @@ dotenv.config();
 
 import { ContentGenerationWorker } from './worker';
 import { Logger } from './utils';
+import { WorkerConfig } from './types';
 import { fal } from '@fal-ai/client';
 
 // Configure the fal.ai API key
@@ -22,15 +23,15 @@ fal.config({
 /**
  * Main entry point for the content generation worker
  */
-async function main(): Promise<void> {
+export async function main(config?: WorkerConfig): Promise<void> {
 
     try {
         // Number of worker instances to create
-        const workerCount = 2;
+        const workerCount = config?.workerCount ?? 2;
         logger.info(`Initializing ${workerCount} content generation workers`);
 
         // Create multiple worker instances
-        const workers = Array.from({ length: workerCount }, () => new ContentGenerationWorker());
+        const workers = Array.from({ length: workerCount }, () => new ContentGenerationWorker(config));
 
         // Handle graceful shutdown
         process.on('SIGINT', () => {
@@ -65,11 +66,5 @@ async function main(): Promise<void> {
         process.exit(1);
     }
 }
-
-// Start the application
-main().catch((error) => {
-    logger.error('Unhandled error:', error);
-    process.exit(1);
-});
 
 /* END GENAI */

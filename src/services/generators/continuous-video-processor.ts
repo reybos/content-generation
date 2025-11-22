@@ -17,15 +17,23 @@
 import { VideoService } from './video-service';
 import { StateService } from '../core/state-service';
 import { Logger } from '../../utils';
+import { WorkerConfig } from '../../types';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 
 export class ContinuousVideoProcessor {
+    private readonly MAIN_VIDEO_DURATION: number;
+    private readonly ADDITIONAL_SCENE_DURATION: number;
+
     constructor(
         private videoService: VideoService,
         private stateService: StateService,
-        private logger: Logger
-    ) {}
+        private logger: Logger,
+        config?: Partial<WorkerConfig>
+    ) {
+        this.MAIN_VIDEO_DURATION = config?.mainVideoDuration ?? 6;
+        this.ADDITIONAL_SCENE_DURATION = config?.additionalSceneDuration ?? 10;
+    }
 
     /**
      * Process scenes for continuous video generation.
@@ -109,7 +117,7 @@ export class ContinuousVideoProcessor {
         // Generate video for first scene if it doesn't exist
         if (!await fs.pathExists(firstVideoPath)) {
             this.logger.info(`Generating video for scene ${firstSceneNumber}`);
-            let duration = 6;
+            let duration = this.MAIN_VIDEO_DURATION;
             if (firstScene.duration === 6 || firstScene.duration === 10 || firstScene.duration === "6" || firstScene.duration === "10") {
                 duration = Number(firstScene.duration);
             }
@@ -157,7 +165,7 @@ export class ContinuousVideoProcessor {
         // Generate video for current scene if needed
         if (!await fs.pathExists(videoPath)) {
             this.logger.info(`Generating video for scene ${sceneNumber}`);
-            let duration = 6;
+            let duration = this.MAIN_VIDEO_DURATION;
             if (scene.duration === 6 || scene.duration === 10 || scene.duration === "6" || scene.duration === "10") {
                 duration = Number(scene.duration);
             }
@@ -199,7 +207,7 @@ export class ContinuousVideoProcessor {
         // Generate video for final scene if needed
         if (!await fs.pathExists(finalVideoPath)) {
             this.logger.info('Generating video for final scene');
-            let duration = 6;
+            let duration = this.ADDITIONAL_SCENE_DURATION;
             if (finalScene && (finalScene.duration === 6 || finalScene.duration === 10 || finalScene.duration === "6" || finalScene.duration === "10")) {
                 duration = Number(finalScene.duration);
             }
