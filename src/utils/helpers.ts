@@ -51,4 +51,28 @@ export function isHalloweenTransform(filename: string): boolean {
     return filename.toLowerCase().includes(HALLOWEEN_TRANSFORM_PATTERN);
 }
 
+/**
+ * Validation result interface
+ */
+export interface ValidationResult {
+    isValid: boolean;
+    error?: string;
+}
+
+/**
+ * Validate prompt length against maximum allowed length
+ * @param prompt The prompt to validate
+ * @param maxLength Maximum allowed length for the prompt
+ * @returns Validation result with isValid flag and optional error message
+ */
+export function validatePromptLength(prompt: string, maxLength: number): ValidationResult {
+    if (prompt.length > maxLength) {
+        return {
+            isValid: false,
+            error: `Prompt length (${prompt.length}) exceeds maximum allowed length (${maxLength})`
+        };
+    }
+    return { isValid: true };
+}
+
 /* END GENAI */
