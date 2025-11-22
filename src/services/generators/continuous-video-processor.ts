@@ -10,6 +10,8 @@
  * const processor = new ContinuousVideoProcessor(videoService, stateService, logger);
  * await processor.processStudyScenes(folderPath, numericScenes, finalScene, completedScenes);
  * ```
+ * 
+ * Note: FileService is no longer needed as saveVideoMeta is now in VideoService
  */
 
 import { VideoService } from './video-service';
@@ -112,7 +114,7 @@ export class ContinuousVideoProcessor {
                 duration = Number(firstScene.duration);
             }
             const videoResult = await this.videoService.generateVideo(firstScene.video_prompt, firstBaseImagePath, firstVideoPath, duration);
-            await this.saveVideoMeta(folderPath, firstSceneNumber, videoResult);
+            await this.videoService.saveVideoMeta(folderPath, firstSceneNumber, videoResult);
         }
     }
 
@@ -160,7 +162,7 @@ export class ContinuousVideoProcessor {
                 duration = Number(scene.duration);
             }
             const videoResult = await this.videoService.generateVideo(scene.video_prompt, baseImagePath, videoPath, duration);
-            await this.saveVideoMeta(folderPath, sceneNumber, videoResult);
+            await this.videoService.saveVideoMeta(folderPath, sceneNumber, videoResult);
         }
     }
 
@@ -202,7 +204,7 @@ export class ContinuousVideoProcessor {
                 duration = Number(finalScene.duration);
             }
             const videoResult = await this.videoService.generateVideo(finalScene.video_prompt, finalBaseImagePath, finalVideoPath, duration);
-            await this.saveVideoMeta(folderPath, 'final', videoResult);
+            await this.videoService.saveVideoMeta(folderPath, 'final', videoResult);
         }
     }
 
@@ -268,21 +270,6 @@ export class ContinuousVideoProcessor {
             state.completedScenes = newCompletedScenes;
             await this.stateService.updateState(folderPath, state);
         }
-    }
-
-    private async saveVideoMeta(folderPath: string, scene: number | string, videoResult: any): Promise<void> {
-        const metaPath = path.join(folderPath, 'meta.json');
-        let metaArr = [];
-        if (await fs.pathExists(metaPath)) {
-            metaArr = await fs.readJson(metaPath);
-        }
-        let sceneMeta = metaArr.find((m: any) => m.scene === scene);
-        if (!sceneMeta) {
-            sceneMeta = { scene };
-            metaArr.push(sceneMeta);
-        }
-        sceneMeta.video = videoResult;
-        await fs.writeJson(metaPath, metaArr, { spaces: 2 });
     }
 }
 

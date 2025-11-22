@@ -3,7 +3,9 @@
 import { fal } from '@fal-ai/client';
 import fs from 'fs-extra';
 import path from 'path';
-import {Logger, HALLOWEEN_FILE_PATTERNS, isHalloweenFile} from '../../utils';
+import {Logger, HALLOWEEN_FILE_PATTERNS, isHalloweenFile, isHalloweenTransform, validatePromptLength} from '../../utils';
+import { ContentType, NewFormatWithArraysData, ContentData } from '../../types';
+import { FileService } from '../core/file-service';
 
 interface ImageGenerationStatus {
     requestId: string;
@@ -11,21 +13,39 @@ interface ImageGenerationStatus {
     startTime: number;
 }
 
+export interface ImageGenerationTask {
+    prompt: string;
+    sceneIndex: number | string;
+    outputPath: string;
+    variant: number;
+}
+
+export interface ImageGenerationResult {
+    scene: number | string;
+    variant: number;
+    success: boolean;
+    error?: string;
+}
+
 /**
  * Service for generating images from prompts using the fal.ai API
  */
 export class ImageService {
     private logger: Logger;
+    private fileService: FileService;
     private readonly POLLING_INTERVAL_MS = 5000; // 5 seconds
     private readonly MAX_WAIT_TIME_MS = 300000; // 5 minutes
     private readonly DEFAULT_IMAGE_MODEL = 'fal-ai/minimax/image-01';
     private readonly HALLOWEEN_IMAGE_MODEL = 'fal-ai/imagen4/preview';
+    private readonly MAX_PROMPT_LENGTH = 1950;
+    private readonly VARIANTS_PER_SCENE = 5;
 
     /**
      * Create a new ImageService instance
      */
     constructor() {
         this.logger = new Logger();
+        this.fileService = new FileService();
     }
 
     /**
@@ -323,6 +343,157 @@ export class ImageService {
         return retryablePatterns.some(pattern => 
             errorMessage.toLowerCase().includes(pattern.toLowerCase())
         );
+    }
+
+    /**
+     * Prepare image generation tasks based on content type
+     */
+    public async prepareImageTasks(
+        contentType: ContentType,
+        folderPath: string,
+        filePath: string,
+        data: ContentData
+    ): Promise<{ sceneTasks: ImageGenerationTask[]; additionalFrameTasks: ImageGenerationTask[] }> {
+        switch (contentType) {
+            case ContentType.HALLOWEEN:
+                return this.prepareHalloweenImageTasks(folderPath, filePath, data as NewFormatWithArraysData);
+            // Future: add cases for other types
+            // case ContentType.CHRISTMAS:
+            //     return this.prepareChristmasImageTasks(folderPath, filePath, data);
+            default:
+                throw new Error(`No handler for content type: ${contentType}`);
+        }
+    }
+
+    /**
+     * Prepare Halloween image generation tasks
+     */
+    private async prepareHalloweenImageTasks(
+        folderPath: string,
+        filePath: string,
+        data: NewFormatWithArraysData
+    ): Promise<{ sceneTasks: ImageGenerationTask[]; additionalFrameTasks: ImageGenerationTask[] }> {
+        const isHalloweenTransformFormat = isHalloweenTransform(path.basename(filePath));
+
+        // Determine which prompts array to use based on format
+        const promptsToProcess = isHalloweenTransformFormat 
+            ? data.video_prompts.map((vp: any) => ({ prompt: vp.prompt, index: vp.index }))
+            : data.prompts.map((p: any, idx: number) => ({ prompt: p.prompt, index: idx }));
+
+        // Prepare tasks for main scenes
+        const sceneTasks: ImageGenerationTask[] = [];
+        for (let i = 0; i < promptsToProcess.length; i++) {
+            const prompt = promptsToProcess[i];
+            const sceneIndex = isHalloweenTransformFormat ? prompt.index : i;
+            
+            // Validate prompt length
+            const promptValidation = validatePromptLength(prompt.prompt, this.MAX_PROMPT_LENGTH);
+            if (!promptValidation.isValid) {
+                throw new Error(`Scene ${sceneIndex}: ${promptValidation.error}`);
+            }
+
+            // Create variants for each scene
+            for (let variant = 1; variant <= this.VARIANTS_PER_SCENE; variant++) {
+                const promptFolderPath = path.join(folderPath, `scene_${sceneIndex}`);
+                const imgPath = path.join(promptFolderPath, `variant_${variant}.png`);
+                
+                sceneTasks.push({
+                    prompt: prompt.prompt,
+                    sceneIndex,
+                    outputPath: imgPath,
+                    variant
+                });
+            }
+        }
+
+        // Prepare tasks for additional frames if they exist
+        const additionalFrameTasks: ImageGenerationTask[] = [];
+        if (data.additional_frames && data.additional_frames.length > 0) {
+            for (let i = 0; i < data.additional_frames.length; i++) {
+                const frame = data.additional_frames[i];
+                
+                // Validate prompt length
+                const promptValidation = validatePromptLength(frame.group_image_prompt, this.MAX_PROMPT_LENGTH);
+                if (!promptValidation.isValid) {
+                    throw new Error(`Additional frame ${frame.index}: ${promptValidation.error}`);
+                }
+
+                // Create variants for each additional frame
+                for (let variant = 1; variant <= this.VARIANTS_PER_SCENE; variant++) {
+                    const additionalFrameFolderPath = path.join(folderPath, `additional_frame_${frame.index}`);
+                    const imgPath = path.join(additionalFrameFolderPath, `variant_${variant}.png`);
+                    
+                    additionalFrameTasks.push({
+                        prompt: frame.group_image_prompt,
+                        sceneIndex: `additional_frame_${frame.index}`,
+                        outputPath: imgPath,
+                        variant
+                    });
+                }
+            }
+        }
+
+        return { sceneTasks, additionalFrameTasks };
+    }
+
+    /**
+     * Generate a batch of images
+     */
+    public async generateImageBatch(
+        tasks: ImageGenerationTask[],
+        filePath: string,
+        type: 'scene' | 'additional_frame'
+    ): Promise<ImageGenerationResult[]> {
+        const allResults: ImageGenerationResult[] = [];
+
+        this.logger.info(`Starting batch generation of ${tasks.length} image tasks for ${type}`);
+
+        // Group tasks by scene for batching (5 second delay between batches)
+        const tasksByScene = new Map<number | string, ImageGenerationTask[]>();
+        for (const task of tasks) {
+            if (!tasksByScene.has(task.sceneIndex)) {
+                tasksByScene.set(task.sceneIndex, []);
+            }
+            tasksByScene.get(task.sceneIndex)!.push(task);
+        }
+
+        const scenes = Array.from(tasksByScene.keys());
+        
+        for (let i = 0; i < scenes.length; i++) {
+            const sceneIndex = scenes[i];
+            const sceneTasks = tasksByScene.get(sceneIndex)!;
+            
+            // Create subfolder for scene or additional frame
+            const promptFolderPath = path.dirname(sceneTasks[0].outputPath);
+            await this.fileService.createFolder(promptFolderPath);
+
+            this.logger.info(`Starting ${type} ${sceneIndex}: ${sceneTasks[0].prompt.substring(0, 100)}...`);
+
+            // Generate all variants for this scene
+            const scenePromises = sceneTasks.map(task => {
+                return this.generateImage(task.prompt, task.outputPath, path.basename(filePath))
+                    .then(() => {
+                        this.logger.info(`Successfully generated variant ${task.variant} for ${type} ${sceneIndex}`);
+                        return { scene: sceneIndex, variant: task.variant, success: true };
+                    })
+                    .catch((error: any) => {
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                        this.logger.error(`Failed to generate variant ${task.variant} for ${type} ${sceneIndex}:`, error);
+                        return { scene: sceneIndex, variant: task.variant, success: false, error: errorMessage };
+                    });
+            });
+
+            const sceneResults = await Promise.all(scenePromises);
+            allResults.push(...sceneResults);
+
+            // Add 5 second delay before next batch (except for last scene)
+            if (i < scenes.length - 1) {
+                this.logger.info(`Waiting 5 seconds before sending next batch...`);
+                await this.delay(5000);
+            }
+        }
+
+        return allResults;
     }
 
 }

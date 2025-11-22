@@ -2,7 +2,7 @@
 
 import fs from 'fs-extra';
 import path from 'path';
-import { GenerationData, NewFormatData, ContentData } from '../../types';
+import { GenerationData, NewFormatData, ContentData, ContentType } from '../../types';
 import { LockService } from './lock-service';
 import { Logger } from '../../utils';
 
@@ -147,6 +147,50 @@ export class FileService {
             await fs.move(sourcePath, destPath, { overwrite: true});
         } catch (error) {
             throw new Error(`Failed to move folder from ${sourcePath} to ${destPath}: ${error}`);
+        }
+    }
+
+    /**
+     * Process file with lock acquisition
+     * Creates folder, acquires lock, and moves JSON file to the folder
+     */
+    public async processFileWithLock(
+        filePath: string,
+        contentType: ContentType
+    ): Promise<{ folderPath: string; folderName: string } | null> {
+        const folderName = path.basename(filePath, path.extname(filePath));
+        const folderPath = path.join(this.inProgressDir, folderName);
+        
+        // Check if this folder is already being processed by a worker
+        if (await fs.pathExists(folderPath)) {
+            this.logger.info(`Folder ${folderName} already exists in in-progress, skipping to avoid conflicts with worker processing`);
+            return null;
+        }
+
+        await this.createFolder(folderPath);
+
+        const lockAcquired = await this.lockService.acquireLock(folderPath);
+        if (!lockAcquired) {
+            this.logger.warn(`Could not acquire lock for folder: ${folderPath}, skipping.`);
+            await fs.remove(folderPath);
+            return null;
+        }
+
+        try {
+            // Move JSON from unprocessed to the folder
+            const destJsonPath = path.join(folderPath, path.basename(filePath));
+            await fs.move(filePath, destJsonPath, { overwrite: false });
+            
+            return { folderPath, folderName };
+        } catch (error) {
+            this.logger.error(`Error setting up folder for ${contentType} file ${filePath}:`, error);
+            // Clean up folder if file move failed
+            try {
+                await fs.remove(folderPath);
+            } catch (cleanupError) {
+                this.logger.error(`Failed to cleanup folder: ${folderPath}`, cleanupError);
+            }
+            return null;
         }
     }
 }

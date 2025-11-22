@@ -1,32 +1,14 @@
 import { FileService } from '../core/file-service';
-import { LockService } from '../core/lock-service';
-import { ImageService } from '../generators/image-service';
-import { NewFormatWithArraysData, ContentData, ContentType } from '../../types';
-import { isHalloweenFile, isHalloweenTransform, validatePromptLength, sleep } from '../../utils';
+import { ImageService, ImageGenerationTask, ImageGenerationResult } from '../generators/image-service';
+import { ContentData, ContentType } from '../../types';
+import { isHalloweenFile, sleep } from '../../utils';
 import { Logger } from '../../utils';
 import * as path from 'path';
-import * as fs from 'fs-extra';
-
-interface ImageGenerationTask {
-    prompt: string;
-    sceneIndex: number | string;
-    outputPath: string;
-    variant: number;
-}
-
-interface ImageGenerationResult {
-    scene: number | string;
-    variant: number;
-    success: boolean;
-    error?: string;
-}
 
 export class ImageWorker {
     private fileService = new FileService();
     private imageService = new ImageService();
-    private lockService = new LockService();
     private logger = new Logger();
-    private readonly MAX_PROMPT_LENGTH = 1950;
     private readonly VARIANTS_PER_SCENE = 5;
 
     public async start(): Promise<void> {
@@ -66,46 +48,6 @@ export class ImageWorker {
         return null;
     }
 
-    private async processFileWithLock(
-        filePath: string,
-        contentType: ContentType
-    ): Promise<{ folderPath: string; folderName: string } | null> {
-        const folderName = path.basename(filePath, path.extname(filePath));
-        const folderPath = path.join(this.fileService.getInProgressDir(), folderName);
-        
-        // Check if this folder is already being processed by a worker
-        if (await fs.pathExists(folderPath)) {
-            this.logger.info(`Folder ${folderName} already exists in in-progress, skipping to avoid conflicts with worker processing`);
-            return null;
-        }
-
-        await this.fileService.createFolder(folderPath);
-
-        const lockAcquired = await this.lockService.acquireLock(folderPath);
-        if (!lockAcquired) {
-            this.logger.warn(`Could not acquire lock for folder: ${folderPath}, skipping.`);
-            await fs.remove(folderPath);
-            return null;
-        }
-
-        try {
-            // Move JSON from unprocessed to the folder
-            const destJsonPath = path.join(folderPath, path.basename(filePath));
-            await fs.move(filePath, destJsonPath, { overwrite: false });
-            
-            return { folderPath, folderName };
-        } catch (error) {
-            this.logger.error(`Error setting up folder for ${contentType} file ${filePath}:`, error);
-            // Clean up folder if file move failed
-            try {
-                await fs.remove(folderPath);
-            } catch (cleanupError) {
-                this.logger.error(`Failed to cleanup folder: ${folderPath}`, cleanupError);
-            }
-            return null;
-        }
-    }
-
     private async processFile(filePath: string): Promise<void> {
         // 1. Read JSON and determine format
         let data: ContentData;
@@ -127,7 +69,7 @@ export class ImageWorker {
         this.logger.info(`Processing ${contentType} file for image generation: ${filePath}`);
 
         // 3. Setup folder and lock (common logic)
-        const setupResult = await this.processFileWithLock(filePath, contentType);
+        const setupResult = await this.fileService.processFileWithLock(filePath, contentType);
         if (!setupResult) {
             return; // Already logged why it failed
         }
@@ -139,23 +81,9 @@ export class ImageWorker {
         let additionalFrameTasks: ImageGenerationTask[] = [];
         
         try {
-            switch (contentType) {
-                case ContentType.HALLOWEEN:
-                    const tasks = await this.prepareHalloweenImageTasks(folderPath, filePath, data as NewFormatWithArraysData);
-                    sceneTasks = tasks.sceneTasks;
-                    additionalFrameTasks = tasks.additionalFrameTasks;
-                    break;
-                // Future: add cases for other types
-                // case ContentType.CHRISTMAS:
-                //     const christmasTasks = await this.prepareChristmasImageTasks(folderPath, filePath, data);
-                //     sceneTasks = christmasTasks.sceneTasks;
-                //     additionalFrameTasks = christmasTasks.additionalFrameTasks;
-                //     break;
-                default:
-                    this.logger.error(`No handler for content type: ${contentType}`);
-                    await this.fileService.moveFailedFolder(folderName);
-                    return;
-            }
+            const tasks = await this.imageService.prepareImageTasks(contentType, folderPath, filePath, data);
+            sceneTasks = tasks.sceneTasks;
+            additionalFrameTasks = tasks.additionalFrameTasks;
         } catch (error) {
             this.logger.error(`Error preparing tasks for ${contentType} images file ${filePath}:`, error);
             // In case of error during task preparation, move to failed
@@ -181,132 +109,6 @@ export class ImageWorker {
         }
     }
 
-    private async prepareHalloweenImageTasks(
-        folderPath: string,
-        filePath: string,
-        data: NewFormatWithArraysData
-    ): Promise<{ sceneTasks: ImageGenerationTask[]; additionalFrameTasks: ImageGenerationTask[] }> {
-        const isHalloweenTransformFormat = isHalloweenTransform(path.basename(filePath));
-
-        // Determine which prompts array to use based on format
-        const promptsToProcess = isHalloweenTransformFormat 
-            ? data.video_prompts.map((vp: any) => ({ prompt: vp.prompt, index: vp.index }))
-            : data.prompts.map((p: any, idx: number) => ({ prompt: p.prompt, index: idx }));
-
-        // Prepare tasks for main scenes
-        const sceneTasks: ImageGenerationTask[] = [];
-        for (let i = 0; i < promptsToProcess.length; i++) {
-            const prompt = promptsToProcess[i];
-            const sceneIndex = isHalloweenTransformFormat ? prompt.index : i;
-            
-            // Validate prompt length (no global_style - legacy removed)
-            const promptValidation = validatePromptLength(prompt.prompt, this.MAX_PROMPT_LENGTH);
-            if (!promptValidation.isValid) {
-                throw new Error(`Scene ${sceneIndex}: ${promptValidation.error}`);
-            }
-
-            // Create variants for each scene
-            for (let variant = 1; variant <= this.VARIANTS_PER_SCENE; variant++) {
-                const promptFolderPath = path.join(folderPath, `scene_${sceneIndex}`);
-                const imgPath = path.join(promptFolderPath, `variant_${variant}.png`);
-                
-                sceneTasks.push({
-                    prompt: prompt.prompt, // No global_style - use prompt directly
-                    sceneIndex,
-                    outputPath: imgPath,
-                    variant
-                });
-            }
-        }
-
-        // Prepare tasks for additional frames if they exist
-        const additionalFrameTasks: ImageGenerationTask[] = [];
-        if (data.additional_frames && data.additional_frames.length > 0) {
-            for (let i = 0; i < data.additional_frames.length; i++) {
-                const frame = data.additional_frames[i];
-                
-                // Validate prompt length
-                const promptValidation = validatePromptLength(frame.group_image_prompt, this.MAX_PROMPT_LENGTH);
-                if (!promptValidation.isValid) {
-                    throw new Error(`Additional frame ${frame.index}: ${promptValidation.error}`);
-                }
-
-                // Create variants for each additional frame
-                for (let variant = 1; variant <= this.VARIANTS_PER_SCENE; variant++) {
-                    const additionalFrameFolderPath = path.join(folderPath, `additional_frame_${frame.index}`);
-                    const imgPath = path.join(additionalFrameFolderPath, `variant_${variant}.png`);
-                    
-                    additionalFrameTasks.push({
-                        prompt: frame.group_image_prompt,
-                        sceneIndex: `additional_frame_${frame.index}`,
-                        outputPath: imgPath,
-                        variant
-                    });
-                }
-            }
-        }
-
-        return { sceneTasks, additionalFrameTasks };
-    }
-
-    private async generateImageBatch(
-        tasks: ImageGenerationTask[],
-        filePath: string,
-        type: 'scene' | 'additional_frame'
-    ): Promise<ImageGenerationResult[]> {
-        const allResults: ImageGenerationResult[] = [];
-        const allErrors: Array<{ type: string; scene: number | string; variant?: number; error: string }> = [];
-
-        this.logger.info(`Starting batch generation of ${tasks.length} image tasks for ${type}`);
-
-        // Group tasks by scene for batching (5 second delay between batches)
-        const tasksByScene = new Map<number | string, ImageGenerationTask[]>();
-        for (const task of tasks) {
-            if (!tasksByScene.has(task.sceneIndex)) {
-                tasksByScene.set(task.sceneIndex, []);
-            }
-            tasksByScene.get(task.sceneIndex)!.push(task);
-        }
-
-        const scenes = Array.from(tasksByScene.keys());
-        
-        for (let i = 0; i < scenes.length; i++) {
-            const sceneIndex = scenes[i];
-            const sceneTasks = tasksByScene.get(sceneIndex)!;
-            
-            // Create subfolder for scene or additional frame
-            const promptFolderPath = path.dirname(sceneTasks[0].outputPath);
-            await this.fileService.createFolder(promptFolderPath);
-
-            this.logger.info(`Starting ${type} ${sceneIndex}: ${sceneTasks[0].prompt.substring(0, 100)}...`);
-
-            // Generate all variants for this scene
-            const scenePromises = sceneTasks.map(task => {
-                return this.imageService.generateImage(task.prompt, task.outputPath, path.basename(filePath))
-                    .then(() => {
-                        this.logger.info(`Successfully generated variant ${task.variant} for ${type} ${sceneIndex}`);
-                        return { scene: sceneIndex, variant: task.variant, success: true };
-                    })
-                    .catch((error: any) => {
-                        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                        this.logger.error(`Failed to generate variant ${task.variant} for ${type} ${sceneIndex}:`, error);
-                        allErrors.push({ type, scene: sceneIndex, variant: task.variant, error: errorMessage });
-                        return { scene: sceneIndex, variant: task.variant, success: false, error: errorMessage };
-                    });
-            });
-
-            const sceneResults = await Promise.all(scenePromises);
-            allResults.push(...sceneResults);
-
-            // Add 5 second delay before next batch (except for last scene)
-            if (i < scenes.length - 1) {
-                this.logger.info(`Waiting 5 seconds before sending next batch...`);
-                await new Promise(resolve => setTimeout(resolve, 5000));
-            }
-        }
-
-        return allResults;
-    }
 
     private async processImages(
         folderPath: string,
@@ -322,7 +124,7 @@ export class ImageWorker {
             const sceneCount = sceneTasks.length / this.VARIANTS_PER_SCENE;
             this.logger.info(`Starting batch generation of ${sceneCount} scenes with ${this.VARIANTS_PER_SCENE} variants each`);
             
-            const sceneResults = await this.generateImageBatch(sceneTasks, filePath, 'scene');
+            const sceneResults = await this.imageService.generateImageBatch(sceneTasks, filePath, 'scene');
             allResults.push(...sceneResults);
         }
 
@@ -331,7 +133,7 @@ export class ImageWorker {
             const additionalFrameCount = additionalFrameTasks.length / this.VARIANTS_PER_SCENE;
             this.logger.info(`Processing ${additionalFrameCount} additional frames with ${this.VARIANTS_PER_SCENE} variants each`);
             
-            const additionalFrameResults = await this.generateImageBatch(additionalFrameTasks, filePath, 'additional_frame');
+            const additionalFrameResults = await this.imageService.generateImageBatch(additionalFrameTasks, filePath, 'additional_frame');
             allResults.push(...additionalFrameResults);
         }
 

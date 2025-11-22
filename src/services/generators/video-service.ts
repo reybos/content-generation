@@ -2,7 +2,9 @@ import { fal } from "@fal-ai/client";
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { Logger } from '../../utils';
+import { Logger, validatePromptLength } from '../../utils';
+import { ContentType } from '../../types';
+import { FileService } from '../core/file-service';
 
 /**
  * Interface for video generation request status
@@ -13,18 +15,36 @@ interface VideoGenerationStatus {
     startTime: number;
 }
 
+export interface VideoGenerationTask {
+    imagePath: string;
+    prompt: string;
+    outputPath: string;
+    duration: number;
+    index: number | string; // Display index for logging and metadata
+}
+
+export interface VideoGenerationResult {
+    index: number | string;
+    success: boolean;
+    error?: string;
+}
+
 /**
  * Service for generating videos from prompts and base images using fal.ai API
  */
 export class VideoService {
     private logger: Logger;
+    private fileService: FileService;
     private readonly POLLING_INTERVAL_MS = 15000; // 15 seconds
     private readonly MAX_WAIT_TIME_MS = 900000; // 15 minutes
     private readonly VIDEO_MODEL = "fal-ai/minimax/hailuo-02/standard/image-to-video";
     // private readonly VIDEO_MODEL = "fal-ai/minimax/hailuo-02/pro/image-to-video"; // only 6 seconds here
+    private readonly BATCH_SIZE = 12;
+    private readonly MAX_PROMPT_LENGTH = 1950;
 
     constructor() {
         this.logger = new Logger();
+        this.fileService = new FileService();
     }
 
     /**
@@ -439,6 +459,226 @@ export class VideoService {
                 reject(err);
             });
         });
+    }
+
+    /**
+     * Prepare video generation tasks based on content type
+     */
+    public async prepareVideoTasks(
+        contentType: ContentType,
+        folderPath: string
+    ): Promise<{ sceneTasks: VideoGenerationTask[]; additionalFrameTasks: VideoGenerationTask[] }> {
+        switch (contentType) {
+            case ContentType.HALLOWEEN:
+                return this.prepareHalloweenTasks(folderPath);
+            // Future: add cases for other types
+            // case ContentType.CHRISTMAS:
+            //     return this.prepareChristmasTasks(folderPath);
+            default:
+                throw new Error(`No handler for content type: ${contentType}`);
+        }
+    }
+
+    /**
+     * Prepare Halloween video generation tasks
+     */
+    private async prepareHalloweenTasks(folderPath: string): Promise<{ sceneTasks: VideoGenerationTask[]; additionalFrameTasks: VideoGenerationTask[] }> {
+        // Read files in folder
+        const files = await fs.readdir(folderPath);
+        
+        // Find JSON file
+        const jsonFile = files.find((file) => file.endsWith(".json"));
+        if (!jsonFile) {
+            throw new Error("No JSON file found");
+        }
+
+        // Read JSON data
+        const jsonFilePath = path.join(folderPath, jsonFile);
+        const data = await this.fileService.readFile(jsonFilePath);
+        const newFormatData = data as any;
+
+        // Check if video_prompts exist
+        if (!newFormatData.video_prompts || !Array.isArray(newFormatData.video_prompts) || newFormatData.video_prompts.length === 0) {
+            throw new Error("No video_prompts found in JSON file");
+        }
+
+        // Count scene images
+        const sceneImages = files.filter(file => file.match(/^scene_\d+\.png$/));
+        
+        // Check scene images count matches video_prompts count
+        if (newFormatData.video_prompts.length !== sceneImages.length) {
+            throw new Error(`Mismatch between video_prompts count (${newFormatData.video_prompts.length}) and scene images count (${sceneImages.length})`);
+        }
+
+        // Prepare tasks for main scenes
+        const sceneTasks: VideoGenerationTask[] = [];
+        for (let i = 0; i < newFormatData.video_prompts.length; i++) {
+            const videoPrompt = newFormatData.video_prompts[i];
+            if (!videoPrompt.video_prompt) {
+                throw new Error(`Missing video_prompt at index ${i}`);
+            }
+            
+            // Validate prompt length
+            const promptValidation = validatePromptLength(videoPrompt.video_prompt, this.MAX_PROMPT_LENGTH);
+            if (!promptValidation.isValid) {
+                throw new Error(`Scene ${i}: ${promptValidation.error}`);
+            }
+            
+            sceneTasks.push({
+                imagePath: path.join(folderPath, `scene_${i}.png`),
+                prompt: videoPrompt.video_prompt,
+                outputPath: path.join(folderPath, `scene_${i}.mp4`),
+                duration: 6,
+                index: i
+            });
+        }
+
+        // Process additional frames if they exist
+        const additionalFramesCount = newFormatData.additional_frames ? newFormatData.additional_frames.length : 0;
+        const additionalFrameTasks: VideoGenerationTask[] = [];
+        
+        if (additionalFramesCount > 0) {
+            const additionalFrameImages = files.filter(file => file.match(/^additional_frame_\d+\.png$/));
+            
+            // Check additional frame images count matches additional_frames count
+            if (additionalFrameImages.length !== additionalFramesCount) {
+                throw new Error(`Mismatch between additional_frames count (${additionalFramesCount}) and additional frame images count (${additionalFrameImages.length})`);
+            }
+
+            // Prepare tasks for additional frames
+            for (let i = 0; i < additionalFramesCount; i++) {
+                const frame = newFormatData.additional_frames[i];
+                if (!frame.group_video_prompt) {
+                    throw new Error(`Missing group_video_prompt for additional frame at index ${i}`);
+                }
+                
+                // Validate prompt length
+                const promptValidation = validatePromptLength(frame.group_video_prompt, this.MAX_PROMPT_LENGTH);
+                if (!promptValidation.isValid) {
+                    throw new Error(`Additional frame ${frame.index}: ${promptValidation.error}`);
+                }
+                
+                additionalFrameTasks.push({
+                    imagePath: path.join(folderPath, `additional_frame_${frame.index}.png`),
+                    prompt: frame.group_video_prompt,
+                    outputPath: path.join(folderPath, `additional_frame_${frame.index}.mp4`),
+                    duration: 10,
+                    index: `additional_frame_${frame.index}`
+                });
+            }
+        }
+
+        return { sceneTasks, additionalFrameTasks };
+    }
+
+    /**
+     * Generate a batch of videos
+     */
+    public async generateVideoBatch(
+        tasks: VideoGenerationTask[],
+        folderPath: string,
+        type: 'scene' | 'additional_frame'
+    ): Promise<VideoGenerationResult[]> {
+        const allErrors: Array<{ type: string; index: number | string; error: string }> = [];
+        const allResults: VideoGenerationResult[] = [];
+        
+        // Filter out tasks where video already exists
+        const tasksToProcess: VideoGenerationTask[] = [];
+        for (const task of tasks) {
+            if (await fs.pathExists(task.outputPath)) {
+                this.logger.info(`Video already exists for ${type} ${task.index}, skipping`);
+                allResults.push({ index: task.index, success: true });
+            } else {
+                // Check if image exists
+                if (!await fs.pathExists(task.imagePath)) {
+                    const error = `Image file not found: ${task.imagePath}`;
+                    allErrors.push({ type, index: task.index, error });
+                    allResults.push({ index: task.index, success: false, error });
+                } else {
+                    tasksToProcess.push(task);
+                }
+            }
+        }
+
+        if (tasksToProcess.length === 0) {
+            return allResults;
+        }
+
+        this.logger.info(`Starting batch video generation: ${tasksToProcess.length} videos in batches of ${this.BATCH_SIZE}`);
+        
+        // Process in batches
+        for (let batchStart = 0; batchStart < tasksToProcess.length; batchStart += this.BATCH_SIZE) {
+            const batchEnd = Math.min(batchStart + this.BATCH_SIZE, tasksToProcess.length);
+            const currentBatch = batchEnd - batchStart;
+            
+            this.logger.info(`Processing batch ${Math.floor(batchStart / this.BATCH_SIZE) + 1}: ${batchStart} to ${batchEnd - 1} (${currentBatch} videos)`);
+            
+            const videoPromises = [];
+            
+            for (let i = batchStart; i < batchEnd; i++) {
+                const task = tasksToProcess[i];
+                
+                this.logger.info(`Adding ${type} ${task.index} to batch for video generation`);
+                
+                const videoPromise = this.generateVideo(
+                    task.prompt,
+                    task.imagePath,
+                    task.outputPath,
+                    task.duration
+                ).then(async (videoResult) => {
+                    // Save video metadata
+                    await this.saveVideoMeta(folderPath, task.index, videoResult);
+                    this.logger.info(`Successfully generated video for ${type} ${task.index}`);
+                    return { index: task.index, success: true };
+                }).catch(async (error) => {
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                    this.logger.error(`Failed to generate video for ${type} ${task.index}: ${errorMessage}`);
+                    allErrors.push({ type, index: task.index, error: errorMessage });
+                    return { index: task.index, success: false, error: errorMessage };
+                });
+                
+                videoPromises.push(videoPromise);
+            }
+            
+            // Wait for current batch to complete
+            if (videoPromises.length > 0) {
+                const batchResults = await Promise.all(videoPromises);
+                allResults.push(...batchResults);
+                
+                // Log batch results
+                const successfulCount = batchResults.filter(r => r.success).length;
+                this.logger.info(`Batch ${Math.floor(batchStart / this.BATCH_SIZE) + 1} completed: ${successfulCount}/${currentBatch} videos generated successfully`);
+                
+                // Log failed generations but don't throw error
+                const failedResults = batchResults.filter(r => !r.success) as Array<{ index: number | string; success: boolean; error: string }>;
+                if (failedResults.length > 0) {
+                    this.logger.warn(`Some videos failed in batch ${Math.floor(batchStart / this.BATCH_SIZE) + 1}:`);
+                    failedResults.forEach(result => {
+                        this.logger.warn(`  ${type} ${result.index}: ❌ Failed - ${result.error}`);
+                    });
+                }
+            }
+        }
+        
+        return allResults;
+    }
+
+    /**
+     * Save video metadata to meta.json file
+     */
+    public async saveVideoMeta(folderPath: string, scene: number | string, videoResult: any): Promise<void> {
+        const metaPath = path.join(folderPath, 'meta.json');
+        let metaArr = [];
+        if (await fs.pathExists(metaPath)) {
+            metaArr = await fs.readJson(metaPath);
+        }
+        let sceneMeta = metaArr.find((m: any) => m.scene === scene);
+        if (!sceneMeta) {
+            sceneMeta = { scene };
+            metaArr.push(sceneMeta);
+        }
+        sceneMeta.video = videoResult;
+        await fs.writeJson(metaPath, metaArr, { spaces: 2 });
     }
 
 }
