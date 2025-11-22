@@ -2,7 +2,7 @@ import { FileService } from '../core/file-service';
 import { LockService } from '../core/lock-service';
 import { StateService } from '../core/state-service';
 import { VideoService } from '../generators/video-service';
-import { Logger, isSongWithAnimalWithVideoPrompts } from '../../utils';
+import { Logger } from '../../utils';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 
@@ -22,11 +22,11 @@ export class VideoWorker {
                 // Look for folders in unprocessed for video processing (existing formats)
                 const unprocessedFolders = await this.fileService.getUnprocessedFolders();
                 
-                // 1. Priority: song with animal format with scene_*.png images
-                const songWithAnimalFolders = this.findSongWithAnimalFolders(unprocessedFolders);
-                if (songWithAnimalFolders.length > 0) {
-                    this.logger.info(`Found ${songWithAnimalFolders.length} song with animal folders for video generation`);
-                    await this.processSongWithAnimalFolder(songWithAnimalFolders[0]);
+                // 1. Priority: song with scene_*.png images
+                const foldersWithScenes = this.findFoldersWithScenes(unprocessedFolders);
+                if (foldersWithScenes.length > 0) {
+                    this.logger.info(`Found ${foldersWithScenes.length} song with animal folders for video generation`);
+                    await this.processFolderWithScenes(foldersWithScenes[0]);
                     continue;
                 }
 
@@ -40,7 +40,7 @@ export class VideoWorker {
         }
     }
 
-    private findSongWithAnimalFolders(folders: string[]): string[] {
+    private findFoldersWithScenes(folders: string[]): string[] {
         return folders.filter(folder => {
             try {
                 const files = fs.readdirSync(folder);
@@ -53,7 +53,7 @@ export class VideoWorker {
         });
     }
 
-    private async processSongWithAnimalFolder(folderPath: string): Promise<void> {
+    private async processFolderWithScenes(folderPath: string): Promise<void> {
         const folderName = path.basename(folderPath);
         const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
 
@@ -62,7 +62,7 @@ export class VideoWorker {
             await fs.move(folderPath, inProgressPath, { overwrite: true });
             this.logger.info(`Processing song with animal folder: ${inProgressPath}`);
             
-            await this.processSongWithAnimalVideoGeneration(inProgressPath);
+            await this.processScenesVideoGeneration(inProgressPath);
             
             // Move to processed
             await this.fileService.moveProcessedFolder(folderName);
@@ -90,7 +90,7 @@ export class VideoWorker {
         }
     }
 
-    private async processSongWithAnimalVideoGeneration(folderPath: string): Promise<void> {
+    private async processScenesVideoGeneration(folderPath: string): Promise<void> {
         let lockReleased = false;
         
         try {
@@ -134,11 +134,6 @@ export class VideoWorker {
 
             const jsonFilePath = path.join(folderPath, jsonFile);
             const data = await this.fileService.readFile(jsonFilePath);
-
-            // Check that this is song with animal format with video_prompts
-            if (!isSongWithAnimalWithVideoPrompts(data)) {
-                throw new Error("Data is not in song with animal format with video_prompts");
-            }
 
             // Now TypeScript knows that data has video_prompts
             const newFormatData = data as any; // Type assertion to work around type issues
@@ -342,14 +337,6 @@ export class VideoWorker {
             }
         }
     }
-
-    /**
-     * Example implementation for processing continuous video scenes has been moved to:
-     * src/services/generators/continuous-video-processor.ts
-     * 
-     * See ContinuousVideoProcessor class for an example of how to generate videos
-     * where each subsequent video continues from the last frame of the previous video.
-     */
 
     private async saveVideoMeta(folderPath: string, scene: number | string, videoResult: any): Promise<void> {
         const metaPath = path.join(folderPath, 'meta.json');

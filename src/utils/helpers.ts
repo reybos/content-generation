@@ -16,76 +16,39 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Check if data is in single video format (song + video_prompt)
- * @param data The data to check
- * @returns True if data is in single video format
+ * Halloween transform pattern (specific pattern for transform format)
  */
-export function isSingleVideoFormat(data: any): boolean {
-    return data && 
-           data.song && 
-           typeof data.song.song_text === 'string' &&
-           typeof data.song.music_prompt === 'string' &&
-           data.video_prompt && 
-           typeof data.video_prompt.video_prompt === 'string' &&
-           typeof data.video_prompt.line === 'string' &&
-           typeof data.video_prompt.index === 'number' &&
-           typeof data.title === 'string';
+export const HALLOWEEN_TRANSFORM_PATTERN = 'halloweentransform';
+
+/**
+ * Halloween file patterns for format detection
+ */
+export const HALLOWEEN_FILE_PATTERNS = [
+    'halloweendance',
+    HALLOWEEN_TRANSFORM_PATTERN,
+    'halloweenpatchwork',
+    'halloweentransformtwoframe'
+];
+
+/**
+ * Check if filename matches any Halloween file pattern
+ * @param filename The filename to check
+ * @returns True if filename matches any Halloween pattern
+ */
+export function isHalloweenFile(filename: string): boolean {
+    const lowerFilename = filename.toLowerCase();
+    return HALLOWEEN_FILE_PATTERNS.some(pattern => 
+        lowerFilename.includes(pattern)
+    );
 }
 
 /**
- * Check if data is in song with animal format (NewFormatWithArraysData)
- * @param data The data to check
- * @returns True if data is in song with animal format
- */
-export function isSongWithAnimal(data: any): data is NewFormatWithArraysData {
-    return data && 
-           typeof data.global_style === 'string' && 
-           Array.isArray(data.prompts) && 
-           data.prompts.length > 0 &&
-           Array.isArray(data.video_prompts) && 
-           data.video_prompts.length > 0 &&
-           Array.isArray(data.titles);
-}
-
-/**
- * Check if data is in study format (GenerationData)
- * @param data The data to check
- * @returns True if data is in study format
- */
-export function isStudy(data: any): data is GenerationData {
-    return data && 
-           data.script &&
-           data.narration &&
-           Array.isArray(data.enhancedMedia) && 
-           data.enhancedMedia.length > 0;
-}
-
-/**
- * Check if data is in song with animal format with video prompts
- * @param data The data to check
- * @returns True if data has video_prompts array
- */
-export function isSongWithAnimalWithVideoPrompts(data: any): boolean {
-    return data && data.video_prompts && Array.isArray(data.video_prompts) && data.video_prompts.length > 0;
-}
-
-/**
- * Check if data is in study format with enhanced media
- * @param data The data to check
- * @returns True if data has enhancedMedia array
- */
-export function isStudyWithEnhancedMedia(data: any): boolean {
-    return data && data.enhancedMedia && Array.isArray(data.enhancedMedia) && data.enhancedMedia.length > 0;
-}
-
-/**
- * Check if data is in halloweenTransform format
- * @param data The data to check
+ * Check if filename is in halloweenTransform format
  * @param filename The filename to check for halloweenTransform pattern
- * @returns True if data is in halloweenTransform format
+ * @returns True if filename contains 'halloweentransform'
  */
-export function isHalloweenTransform(data: any, filename: string): boolean {
-    return filename.toLowerCase().includes('halloweentransform');
+export function isHalloweenTransform(filename: string): boolean {
+    return filename.toLowerCase().includes(HALLOWEEN_TRANSFORM_PATTERN);
 }
 
 /* END GENAI */

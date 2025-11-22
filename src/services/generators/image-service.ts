@@ -3,7 +3,7 @@
 import { fal } from '@fal-ai/client';
 import fs from 'fs-extra';
 import path from 'path';
-import { Logger } from '../../utils';
+import {Logger, HALLOWEEN_FILE_PATTERNS, isHalloweenFile} from '../../utils';
 
 interface ImageGenerationStatus {
     requestId: string;
@@ -20,12 +20,6 @@ export class ImageService {
     private readonly MAX_WAIT_TIME_MS = 300000; // 5 minutes
     private readonly DEFAULT_IMAGE_MODEL = 'fal-ai/minimax/image-01';
     private readonly HALLOWEEN_IMAGE_MODEL = 'fal-ai/imagen4/preview';
-    private readonly HALLOWEEN_FILE_PATTERNS = [
-        'halloweendance',
-        'halloweentransform',
-        'halloweenpatchwork',
-        'halloweentransformtwoframe'
-    ];
 
     /**
      * Create a new ImageService instance
@@ -38,12 +32,7 @@ export class ImageService {
      * Determine the appropriate model based on filename
      */
     private getModelForGeneration(filename: string): string {
-        const lowerFilename = filename.toLowerCase();
-        const isHalloweenFile = this.HALLOWEEN_FILE_PATTERNS.some(pattern => 
-            lowerFilename.includes(pattern)
-        );
-        
-        if (isHalloweenFile) {
+        if (isHalloweenFile(filename)) {
             this.logger.info(`Using Halloween model for file: ${filename}`);
             return this.HALLOWEEN_IMAGE_MODEL;
         }

@@ -2,7 +2,7 @@ import { FileService } from '../core/file-service';
 import { LockService } from '../core/lock-service';
 import { ImageService } from '../generators/image-service';
 import { NewFormatWithArraysData, ContentData } from '../../types';
-import { isSongWithAnimal, isHalloweenTransform } from '../../utils';
+import { isHalloweenFile, isHalloweenTransform } from '../../utils';
 import { Logger } from '../../utils';
 import * as path from 'path';
 import * as fs from 'fs-extra';
@@ -42,7 +42,7 @@ export class ImageWorker {
         // 2. Determine format and process accordingly
         this.logger.info(`Processing file for image generation: ${filePath}`);
         
-        if (isSongWithAnimal(data) || isHalloweenTransform(data, path.basename(filePath))) {
+        if (isHalloweenFile(path.basename(filePath))) {
             this.logger.info(`Генерация картинок. Шортсы с животными по формату "The X says X"`);
             await this.processSongWithAnimalImages(filePath, data as NewFormatWithArraysData);
 
@@ -77,7 +77,7 @@ export class ImageWorker {
             await fs.move(filePath, destJsonPath, { overwrite: false });
 
             // Determine which prompts array to use based on format
-            const isHalloweenTransformFormat = isHalloweenTransform(data, path.basename(filePath));
+            const isHalloweenTransformFormat = isHalloweenTransform(path.basename(filePath));
             const promptsToProcess = isHalloweenTransformFormat 
                 ? data.video_prompts.map((vp: any) => ({ prompt: vp.prompt, index: vp.index }))
                 : data.prompts.map((p: any, idx: number) => ({ prompt: p.prompt, index: idx }));
