@@ -21,7 +21,7 @@ export class VideoService {
     private readonly POLLING_INTERVAL_MS = 15000; // 15 seconds
     private readonly MAX_WAIT_TIME_MS = 900000; // 15 minutes
     private readonly VIDEO_MODEL = "fal-ai/minimax/hailuo-02/standard/image-to-video";
-    // private readonly VIDEO_MODEL = "fal-ai/minimax/hailuo-02/pro/image-to-video"; //тут только 6 секунд
+    // private readonly VIDEO_MODEL = "fal-ai/minimax/hailuo-02/pro/image-to-video"; // only 6 seconds here
 
     constructor() {
         this.logger = new Logger();

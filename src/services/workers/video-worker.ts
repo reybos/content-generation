@@ -19,10 +19,10 @@ export class VideoWorker {
         
         while (true) {
             try {
-                // Ищем папки в unprocessed для обработки видео (существующие форматы)
+                // Look for folders in unprocessed for video processing (existing formats)
                 const unprocessedFolders = await this.fileService.getUnprocessedFolders();
                 
-                // 1. Приоритет: формат песни с животными с scene_*.png изображениями
+                // 1. Priority: song with animal format with scene_*.png images
                 const songWithAnimalFolders = this.findSongWithAnimalFolders(unprocessedFolders);
                 if (songWithAnimalFolders.length > 0) {
                     this.logger.info(`Found ${songWithAnimalFolders.length} song with animal folders for video generation`);
@@ -30,7 +30,7 @@ export class VideoWorker {
                     continue;
                 }
 
-                // 2. Формат обучения с base_0.png
+                // 2. Study format with base_0.png
                 const studyFolders = this.findStudyFolders(unprocessedFolders);
                 if (studyFolders.length > 0) {
                     this.logger.info(`Found ${studyFolders.length} study format folders for video generation`);
@@ -38,7 +38,7 @@ export class VideoWorker {
                     continue;
                 }
 
-                // 3. Новый формат с одним видео - ищем JSON файлы в unprocessed
+                // 3. New format with single video - look for JSON files in unprocessed
                 const unprocessedFiles = await this.fileService.getUnprocessedFiles();
                 const studyShortsFiles = this.findStudyShorts(unprocessedFiles);
                 if (studyShortsFiles.length > 0) {
@@ -47,7 +47,7 @@ export class VideoWorker {
                     continue;
                 }
 
-                // Нет файлов или папок для обработки, ждем
+                // No files or folders to process, wait
                 this.logger.info('No files or folders to process, waiting...');
                 await this.sleep(25000 + Math.floor(Math.random() * 5000));
             } catch (error) {
@@ -86,10 +86,10 @@ export class VideoWorker {
     private findStudyShorts(files: string[]): string[] {
         return files.filter(filePath => {
             try {
-                // Читаем JSON файл для проверки структуры
+                // Read JSON file to check structure
                 const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
                 
-                // Проверяем структуру нового формата
+                // Check new format structure
                 return isSingleVideoFormat(data);
             } catch {
                 return false;
@@ -102,20 +102,20 @@ export class VideoWorker {
         const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
 
         try {
-            // Перемещаем папку в in-progress
+            // Move folder to in-progress
             await fs.move(folderPath, inProgressPath, { overwrite: true });
             this.logger.info(`Processing song with animal folder: ${inProgressPath}`);
             
             await this.processSongWithAnimalVideoGeneration(inProgressPath);
             
-            // Перемещаем в processed
+            // Move to processed
             await this.fileService.moveProcessedFolder(folderName);
             this.logger.info(`Successfully processed song with animal folder: ${folderName}`);
             
         } catch (error) {
             this.logger.error(`Error processing song with animal folder ${inProgressPath}:`, error);
             
-            // В случае ошибки перемещаем в failed
+            // In case of error, move to failed
             try {
                 await this.fileService.moveFailedFolder(folderName);
             } catch (moveError) {
@@ -139,20 +139,20 @@ export class VideoWorker {
         const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
 
         try {
-            // Перемещаем папку в in-progress
+            // Move folder to in-progress
             await fs.move(folderPath, inProgressPath, { overwrite: true });
             this.logger.info(`Processing study format folder: ${inProgressPath}`);
             
             await this.processStudyVideoGeneration(inProgressPath);
             
-            // Перемещаем в processed
+            // Move to processed
             await this.fileService.moveProcessedFolder(folderName);
             this.logger.info(`Successfully processed study format folder: ${folderName}`);
             
         } catch (error) {
             this.logger.error(`Error processing study format folder ${inProgressPath}:`, error);
             
-            // В случае ошибки перемещаем в failed
+            // In case of error, move to failed
             try {
                 await this.fileService.moveFailedFolder(folderName);
             } catch (moveError) {
@@ -175,7 +175,7 @@ export class VideoWorker {
         const folderName = path.basename(filePath, path.extname(filePath));
         const folderPath = path.join(this.fileService.getInProgressDir(), folderName);
         
-        // Проверяем, не обрабатывается ли уже эта папка воркером
+        // Check if this folder is already being processed by a worker
         if (await fs.pathExists(folderPath)) {
             this.logger.info(`Folder ${folderName} already exists in in-progress, skipping to avoid conflicts with worker processing`);
             return;
@@ -191,7 +191,7 @@ export class VideoWorker {
         }
 
         try {
-            // Переместить JSON из unprocessed в папку
+            // Move JSON from unprocessed to the folder
             const destJsonPath = path.join(folderPath, path.basename(filePath));
             await fs.move(filePath, destJsonPath, { overwrite: false });
 
@@ -199,14 +199,14 @@ export class VideoWorker {
             
             await this.processSingleVideoGeneration(folderPath);
             
-            // Перемещаем в processed
+            // Move to processed
             await this.fileService.moveProcessedFolder(folderName);
             this.logger.info(`Successfully processed single video format file: ${filePath}`);
             
         } catch (error) {
             this.logger.error(`Error processing single video format file ${filePath}:`, error);
             
-            // В случае ошибки перемещаем в failed
+            // In case of error, move to failed
             try {
                 await this.fileService.moveFailedFolder(folderName);
             } catch (moveError) {
@@ -223,7 +223,7 @@ export class VideoWorker {
                 }
             }
         }
-        // Блокировка автоматически освобождается в moveProcessedFolder/moveFailedFolder
+        // Lock is automatically released in moveProcessedFolder/moveFailedFolder
     }
 
     private async processSongWithAnimalVideoGeneration(folderPath: string): Promise<void> {
@@ -236,14 +236,14 @@ export class VideoWorker {
                 return;
             }
 
-            // Инициализируем состояние
+            // Initialize state
             const state = await this.stateService.initializeState(
                 folderPath,
                 this.lockService.getWorkerId(),
                 this.maxRetries
             );
 
-            // Проверяем превышение максимального количества попыток
+            // Check if max retries exceeded
             if (await this.stateService.hasExceededMaxRetries(folderPath)) {
                 if (await this.stateService.isInCooldown(folderPath)) {
                     this.logger.info(`Folder ${folderPath} is in cooldown period, skipping`);
@@ -261,7 +261,7 @@ export class VideoWorker {
                 return;
             }
 
-            // Читаем JSON файл
+            // Read JSON file
             const files = await fs.readdir(folderPath);
             const jsonFile = files.find((file) => file.endsWith(".json"));
             if (!jsonFile) {
@@ -271,26 +271,26 @@ export class VideoWorker {
             const jsonFilePath = path.join(folderPath, jsonFile);
             const data = await this.fileService.readFile(jsonFilePath);
 
-            // Проверяем, что это формат песни с животными с video_prompts
+            // Check that this is song with animal format with video_prompts
             if (!isSongWithAnimalWithVideoPrompts(data)) {
                 throw new Error("Data is not in song with animal format with video_prompts");
             }
 
-            // Теперь TypeScript знает, что data имеет video_prompts
-            const newFormatData = data as any; // Type assertion для обхода проблем с типами
+            // Now TypeScript knows that data has video_prompts
+            const newFormatData = data as any; // Type assertion to work around type issues
 
-            // Валидируем формат песни с животными с video_prompts
+            // Validate song with animal format with video_prompts
             if (!newFormatData.video_prompts || !Array.isArray(newFormatData.video_prompts) || newFormatData.video_prompts.length === 0) {
                 throw new Error("No video_prompts found in JSON file");
             }
 
-            // Получаем изображения сцен
+            // Get scene images
             const sceneImages = files.filter(file => file.match(/^scene_\d+\.png$/));
             if (newFormatData.video_prompts.length !== sceneImages.length) {
                 throw new Error(`Mismatch between video_prompts count (${newFormatData.video_prompts.length}) and scene images count (${sceneImages.length})`);
             }
 
-            // Получаем изображения additional frames из корня папки (уже отобранные вручную)
+            // Get additional frame images from folder root (already manually selected)
             const additionalFrameImages = files.filter(file => file.match(/^additional_frame_\d+\.png$/));
             const additionalFramesCount = newFormatData.additional_frames ? newFormatData.additional_frames.length : 0;
             
@@ -303,7 +303,7 @@ export class VideoWorker {
                 this.logger.info(`Found ${additionalFramesCount} additional frames and ${additionalFrameImages.length} additional frame images`);
             }
 
-            // Обрабатываем видео батчами по 12
+            // Process videos in batches of 12
             const batchSize = 12;
             const totalVideos = newFormatData.video_prompts.length;
             const allErrors: Array<{ type: string; index: number | string; error: string }> = [];
@@ -323,13 +323,13 @@ export class VideoWorker {
                     const imagePath = path.join(folderPath, `scene_${i}.png`);
                     const videoPath = path.join(folderPath, `scene_${i}.mp4`);
 
-                    // Проверяем существование изображения
+                    // Check if image exists
                     if (!await fs.pathExists(imagePath)) {
                         allErrors.push({ type: 'scene', index: i, error: `Image file not found: ${imagePath}` });
                         continue;
                     }
 
-                    // Пропускаем если видео уже существует
+                    // Skip if video already exists
                     if (await fs.pathExists(videoPath)) {
                         this.logger.info(`Video already exists for scene ${i}, skipping`);
                         continue;
@@ -343,7 +343,7 @@ export class VideoWorker {
                         videoPath,
                         6 // duration
                     ).then(async (videoResult) => {
-                        // Сохраняем мета-информацию о видео
+                        // Save video metadata
                         await this.saveVideoMeta(folderPath, i, videoResult);
                         this.logger.info(`Successfully generated video for scene ${i}`);
                         return { index: i, success: true };
@@ -357,15 +357,15 @@ export class VideoWorker {
                     videoPromises.push(videoPromise);
                 }
                 
-                // Ждем завершения текущего батча
+                // Wait for current batch to complete
                 if (videoPromises.length > 0) {
                     const batchResults = await Promise.all(videoPromises);
                     
-                    // Логируем результаты батча
+                    // Log batch results
                     const successfulCount = batchResults.filter(r => r.success).length;
                     this.logger.info(`Batch ${Math.floor(batchStart / batchSize) + 1} completed: ${successfulCount}/${currentBatch} videos generated successfully`);
                     
-                    // Логируем неудачные генерации, но не выбрасываем ошибку
+                    // Log failed generations but don't throw error
                     const failedResults = batchResults.filter(r => !r.success) as Array<{ index: number; success: boolean; error: string }>;
                     if (failedResults.length > 0) {
                         this.logger.warn(`Some videos failed in batch ${Math.floor(batchStart / batchSize) + 1}:`);
@@ -376,7 +376,7 @@ export class VideoWorker {
                 }
             }
 
-            // Обрабатываем additional frames если они есть
+            // Process additional frames if they exist
             if (additionalFramesCount > 0) {
                 this.logger.info(`Starting additional frames video generation: ${additionalFramesCount} additional frames`);
                 
@@ -385,17 +385,17 @@ export class VideoWorker {
                 for (let i = 0; i < additionalFramesCount; i++) {
                     const frame = newFormatData.additional_frames[i];
                     
-                    // Используем отобранное вручную изображение из корня папки
+                    // Use manually selected image from folder root
                     const imagePath = path.join(folderPath, `additional_frame_${frame.index}.png`);
                     const videoPath = path.join(folderPath, `additional_frame_${frame.index}.mp4`);
 
-                    // Проверяем существование изображения
+                    // Check if image exists
                     if (!await fs.pathExists(imagePath)) {
                         allErrors.push({ type: 'additional_frame', index: frame.index, error: `Additional frame image file not found: ${imagePath}` });
                         continue;
                     }
 
-                    // Пропускаем если видео уже существует
+                    // Skip if video already exists
                     if (await fs.pathExists(videoPath)) {
                         this.logger.info(`Video already exists for additional frame ${frame.index}, skipping`);
                         continue;
@@ -409,7 +409,7 @@ export class VideoWorker {
                         videoPath,
                         10 // duration
                     ).then(async (videoResult) => {
-                        // Сохраняем мета-информацию о видео
+                        // Save video metadata
                         await this.saveVideoMeta(folderPath, `additional_frame_${frame.index}`, videoResult);
                         this.logger.info(`Successfully generated video for additional frame ${frame.index}`);
                         return { index: `additional_frame_${frame.index}`, success: true };
@@ -423,15 +423,15 @@ export class VideoWorker {
                     additionalFramePromises.push(videoPromise);
                 }
                 
-                // Ждем завершения генерации additional frames
+                // Wait for additional frames generation to complete
                 if (additionalFramePromises.length > 0) {
                     const additionalFrameResults = await Promise.all(additionalFramePromises);
                     
-                    // Логируем результаты additional frames
+                    // Log additional frames results
                     const successfulCount = additionalFrameResults.filter(r => r.success).length;
                     this.logger.info(`Additional frames completed: ${successfulCount}/${additionalFramePromises.length} videos generated successfully`);
                     
-                    // Логируем неудачные генерации, но не выбрасываем ошибку
+                    // Log failed generations but don't throw error
                     const failedResults = additionalFrameResults.filter(r => !r.success) as Array<{ index: string; success: boolean; error: string }>;
                     if (failedResults.length > 0) {
                         this.logger.warn(`Some additional frame videos failed:`);
@@ -442,14 +442,14 @@ export class VideoWorker {
                 }
             }
 
-            // Принимаем решение о судьбе папки на основе собранных ошибок
+            // Make a decision about the folder's fate based on collected errors
             if (allErrors.length > 0) {
                 this.logger.warn(`Video generation completed with ${allErrors.length} errors:`);
                 allErrors.forEach(error => {
                     this.logger.warn(`  ${error.type} ${error.index}: ${error.error}`);
                 });
                 
-                // Если есть ошибки, перемещаем папку в failed
+                // If there are errors, move folder to failed
                 this.logger.error(`Moving folder to failed due to ${allErrors.length} errors`);
                 await this.fileService.moveFailedFolder(path.basename(folderPath));
             } else {
@@ -489,14 +489,14 @@ export class VideoWorker {
                 return;
             }
 
-            // Инициализируем состояние
+            // Initialize state
             const state = await this.stateService.initializeState(
                 folderPath,
                 this.lockService.getWorkerId(),
                 this.maxRetries
             );
 
-            // Проверяем превышение максимального количества попыток
+            // Check if max retries exceeded
             if (await this.stateService.hasExceededMaxRetries(folderPath)) {
                 if (await this.stateService.isInCooldown(folderPath)) {
                     this.logger.info(`Folder ${folderPath} is in cooldown period, skipping`);
@@ -514,7 +514,7 @@ export class VideoWorker {
                 return;
             }
 
-            // Читаем JSON файл
+            // Read JSON file
             const files = await fs.readdir(folderPath);
             const jsonFile = files.find((file) => file.endsWith(".json"));
             if (!jsonFile) {
@@ -524,20 +524,20 @@ export class VideoWorker {
             const jsonFilePath = path.join(folderPath, jsonFile);
             const data = await this.fileService.readFile(jsonFilePath);
 
-            // Проверяем, что это формат обучения с enhancedMedia
+            // Check that this is study format with enhancedMedia
             if (!isStudyWithEnhancedMedia(data)) {
                 throw new Error("Data is not in study format with enhancedMedia");
             }
 
-            // Теперь TypeScript знает, что data имеет enhancedMedia
-            const oldFormatData = data as any; // Type assertion для обхода проблем с типами
+            // Now TypeScript knows that data has enhancedMedia
+            const oldFormatData = data as any; // Type assertion to work around type issues
 
-            // Валидируем формат обучения с enhancedMedia
+            // Validate study format with enhancedMedia
             if (!oldFormatData.enhancedMedia || !Array.isArray(oldFormatData.enhancedMedia) || oldFormatData.enhancedMedia.length === 0) {
                 throw new Error("No enhancedMedia found in JSON file");
             }
 
-            // Фильтруем и сортируем сцены для обработки
+            // Filter and sort scenes for processing
             const numericScenes = oldFormatData.enhancedMedia
                 .filter((media: any) => typeof media.scene === 'number')
                 .sort((a: any, b: any) => (a.scene as number) - (b.scene as number));
@@ -546,21 +546,21 @@ export class VideoWorker {
                 throw new Error("No numeric scenes found in JSON file");
             }
 
-            // Проверяем наличие scene 0
+            // Check for presence of scene 0
             const hasScene0 = numericScenes.some((media: any) => media.scene === 0);
             if (!hasScene0) {
                 throw new Error("No scene 0 found in JSON file");
             }
 
-            // Ищем финальную сцену
+            // Look for final scene
             const finalScene = oldFormatData.enhancedMedia.find((media: any) => media.scene === "final");
 
             this.logger.info(`Found ${numericScenes.length} numeric scenes and ${finalScene ? '1' : '0'} final scene`);
 
-            // Получаем уже завершенные сцены
+            // Get already completed scenes
             const completedScenes = state.completedScenes || [];
 
-            // Обрабатываем сцены
+            // Process scenes
             await this.processStudyScenes(folderPath, numericScenes, finalScene, completedScenes);
 
             await this.stateService.markCompleted(folderPath);
@@ -591,16 +591,16 @@ export class VideoWorker {
         let lockReleased = false;
         
         try {
-            // Блокировка уже получена в processSingleVideoFile, не нужно получать её снова
+            // Lock already acquired in processSingleVideoFile, don't need to acquire it again
 
-            // Инициализируем состояние
+            // Initialize state
             const state = await this.stateService.initializeState(
                 folderPath,
                 this.lockService.getWorkerId(),
                 this.maxRetries
             );
 
-            // Проверяем превышение максимального количества попыток
+            // Check if max retries exceeded
             if (await this.stateService.hasExceededMaxRetries(folderPath)) {
                 if (await this.stateService.isInCooldown(folderPath)) {
                     this.logger.info(`Folder ${folderPath} is in cooldown period, skipping`);
@@ -618,7 +618,7 @@ export class VideoWorker {
                 return;
             }
 
-            // Читаем JSON файл
+            // Read JSON file
             const files = await fs.readdir(folderPath);
             const jsonFile = files.find((file) => file.endsWith(".json"));
             if (!jsonFile) {
@@ -628,40 +628,40 @@ export class VideoWorker {
             const jsonFilePath = path.join(folderPath, jsonFile);
             const data = await this.fileService.readFile(jsonFilePath);
 
-            // Проверяем, что это новый формат с одним видео
+            // Check that this is new format with single video
             if (!isSingleVideoFormat(data)) {
                 throw new Error("Data is not in single video format");
             }
 
-            // Type assertion для нового формата
+            // Type assertion for new format
             const singleVideoData = data as any;
 
-            // Валидируем структуру
+            // Validate structure
             if (!singleVideoData.song || !singleVideoData.video_prompt || !singleVideoData.video_prompt.video_prompt) {
                 throw new Error("Invalid single video format: missing required fields");
             }
 
             this.logger.info(`Processing single video generation for: ${singleVideoData.title || 'Untitled'}`);
 
-            // Путь к изображению blank-video.png в папке generations
+            // Path to blank-video.png image in generations folder
             const blankImagePath = path.join(this.fileService.getBaseDir(), 'blank-video.png');
             
-            // Проверяем существование изображения
+            // Check if image exists
             if (!await fs.pathExists(blankImagePath)) {
                 throw new Error(`Blank video image not found: ${blankImagePath}`);
             }
 
-            // Путь для выходного видео
+            // Path for output video
             const videoPath = path.join(folderPath, 'video.mp4');
 
-            // Проверяем, не существует ли уже видео
+            // Check if video already exists
             if (await fs.pathExists(videoPath)) {
                 this.logger.info(`Video already exists, skipping generation`);
                 await this.stateService.markCompleted(folderPath);
                 return;
             }
 
-            // Генерируем видео
+            // Generate video
             this.logger.info(`Generating single video with prompt: ${singleVideoData.video_prompt.video_prompt.substring(0, 100)}...`);
             
             const videoResult = await this.videoService.generateVideo(
@@ -671,7 +671,7 @@ export class VideoWorker {
                 10 // duration
             );
 
-            // Сохраняем мета-информацию о видео
+            // Save video metadata
             await this.saveVideoMeta(folderPath, 'single', videoResult);
 
             this.logger.info(`Successfully generated single video: ${videoPath}`);
@@ -707,33 +707,33 @@ export class VideoWorker {
     ): Promise<void> {
         this.logger.info(`Processing scenes for ${folderPath}. Completed scenes: ${JSON.stringify(completedScenes)}`);
 
-        // Проверяем, что у нас есть scene 0
+        // Check that we have scene 0
         const firstScene = numericScenes.find(media => media.scene === 0);
         if (!firstScene) {
             throw new Error(`No scene 0 found in folder: ${folderPath}`);
         }
 
-        // Проверяем состояние файловой системы
+        // Check file system state
         await this.verifyFileSystemState(folderPath, completedScenes);
 
-        // Обрабатываем первую сцену (scene 0)
+        // Process first scene (scene 0)
         if (!completedScenes.includes(0)) {
             await this.processFirstScene(folderPath, firstScene);
             await this.stateService.markSceneCompleted(folderPath, 0);
             
-            // Перезагружаем завершенные сцены
+            // Reload completed scenes
             const state = await this.stateService.getState(folderPath);
             if (state) {
                 completedScenes = state.completedScenes || [];
             }
         }
 
-        // Обрабатываем последующие сцены
+        // Process subsequent scenes
         for (let i = 1; i < numericScenes.length; i++) {
             const scene = numericScenes[i];
             const sceneNumber = scene.scene as number;
 
-            // Пропускаем если сцена уже завершена
+            // Skip if scene is already completed
             if (completedScenes.includes(sceneNumber)) {
                 this.logger.info(`Skipping already completed scene ${sceneNumber}`);
                 continue;
@@ -742,14 +742,14 @@ export class VideoWorker {
             await this.processSubsequentScene(folderPath, scene, sceneNumber, completedScenes);
             await this.stateService.markSceneCompleted(folderPath, sceneNumber);
             
-            // Перезагружаем завершенные сцены
+            // Reload completed scenes
             const updatedState = await this.stateService.getState(folderPath);
             if (updatedState) {
                 completedScenes = updatedState.completedScenes || [];
             }
         }
 
-        // Обрабатываем финальную сцену если она существует
+        // Process final scene if it exists
         if (finalScene && !completedScenes.includes(-1)) {
             await this.processFinalScene(folderPath, finalScene, numericScenes, completedScenes);
             await this.stateService.markSceneCompleted(folderPath, -1);
@@ -763,13 +763,13 @@ export class VideoWorker {
 
         this.logger.info(`Processing first scene (${firstSceneNumber})`);
 
-        // Проверяем существование базового изображения
+        // Check if base image exists
         if (!await fs.pathExists(firstBaseImagePath)) {
             this.logger.info(`Base image not found for scene ${firstSceneNumber}, skipping video generation`);
             return;
         }
 
-        // Генерируем видео для первой сцены если его нет
+        // Generate video for first scene if it doesn't exist
         if (!await fs.pathExists(firstVideoPath)) {
             this.logger.info(`Generating video for scene ${firstSceneNumber}`);
             let duration = 6;
@@ -786,14 +786,14 @@ export class VideoWorker {
 
         const previousSceneNumber = sceneNumber - 1;
 
-        // Пути для текущей сцены
+        // Paths for current scene
         const baseImagePath = `${folderPath}/base_${sceneNumber}.png`;
         const videoPath = `${folderPath}/scene_${sceneNumber}.mp4`;
 
-        // Путь для видео предыдущей сцены
+        // Path for previous scene's video
         const previousVideoPath = `${folderPath}/scene_${previousSceneNumber}.mp4`;
 
-        // Убеждаемся, что предыдущая сцена завершена
+        // Make sure previous scene is completed
         if (!completedScenes.includes(previousSceneNumber)) {
             const prevBaseImagePath = `${folderPath}/base_${previousSceneNumber}.png`;
             const prevVideoPath = `${folderPath}/scene_${previousSceneNumber}.mp4`;
@@ -806,18 +806,18 @@ export class VideoWorker {
             }
         }
 
-        // Проверяем существование видео предыдущей сцены
+        // Check if previous scene's video exists
         if (!await fs.pathExists(previousVideoPath)) {
             throw new Error(`Previous scene's video not found: ${previousVideoPath}`);
         }
 
-        // Извлекаем последний кадр из видео предыдущей сцены если нужно
+        // Extract last frame from previous scene's video if needed
         if (!await fs.pathExists(baseImagePath)) {
             this.logger.info(`Extracting last frame from scene ${previousSceneNumber} video`);
             await this.videoService.extractLastFrame(previousVideoPath, baseImagePath);
         }
 
-        // Генерируем видео для текущей сцены если нужно
+        // Generate video for current scene if needed
         if (!await fs.pathExists(videoPath)) {
             this.logger.info(`Generating video for scene ${sceneNumber}`);
             let duration = 6;
@@ -832,34 +832,34 @@ export class VideoWorker {
     private async processFinalScene(folderPath: string, finalScene: any, numericScenes: any[], completedScenes: number[]): Promise<void> {
         this.logger.info('Processing final scene');
 
-        // Получаем последнюю числовую сцену
+        // Get last numeric scene
         const lastNumericScene = numericScenes[numericScenes.length - 1];
         const lastSceneNumber = lastNumericScene.scene as number;
 
-        // Пути для финальной сцены
+        // Paths for final scene
         const finalBaseImagePath = `${folderPath}/base_final.png`;
         const finalVideoPath = `${folderPath}/scene_final.mp4`;
 
-        // Путь для видео последней числовой сцены
+        // Path for last numeric scene's video
         const lastVideoPath = `${folderPath}/scene_${lastSceneNumber}.mp4`;
 
-        // Убеждаемся, что последняя числовая сцена завершена
+        // Make sure last numeric scene is completed
         if (!completedScenes.includes(lastSceneNumber)) {
             throw new Error(`Cannot process final scene before scene ${lastSceneNumber} is completed`);
         }
 
-        // Проверяем существование видео последней сцены
+        // Check if last scene's video exists
         if (!await fs.pathExists(lastVideoPath)) {
             throw new Error(`Last scene's video not found: ${lastVideoPath}`);
         }
 
-        // Извлекаем последний кадр из видео последней числовой сцены если нужно
+        // Extract last frame from last numeric scene's video if needed
         if (!await fs.pathExists(finalBaseImagePath)) {
             this.logger.info(`Extracting last frame from scene ${lastSceneNumber} video for final scene`);
             await this.videoService.extractLastFrame(lastVideoPath, finalBaseImagePath);
         }
 
-        // Генерируем видео для финальной сцены если нужно
+        // Generate video for final scene if needed
         if (!await fs.pathExists(finalVideoPath)) {
             this.logger.info('Generating video for final scene');
             let duration = 6;
@@ -874,10 +874,10 @@ export class VideoWorker {
     private async verifyFileSystemState(folderPath: string, completedScenes: number[]): Promise<void> {
         this.logger.info(`Verifying file system state for ${folderPath}`);
 
-        // Проверяем, что сцены отмечены как завершенные, но их файлы не существуют
+        // Check that scenes are marked as completed but their files don't exist
         for (const sceneNumber of completedScenes) {
             if (sceneNumber === -1) {
-                // Финальная сцена
+                // Final scene
                 const finalBaseImagePath = `${folderPath}/base_final.png`;
                 const finalVideoPath = `${folderPath}/scene_final.mp4`;
 
@@ -886,7 +886,7 @@ export class VideoWorker {
                     await this.removeSceneFromCompleted(folderPath, sceneNumber);
                 }
             } else {
-                // Числовая сцена
+                // Numeric scene
                 const baseImagePath = `${folderPath}/base_${sceneNumber}.png`;
                 const videoPath = `${folderPath}/scene_${sceneNumber}.mp4`;
 
@@ -897,10 +897,10 @@ export class VideoWorker {
             }
         }
 
-        // Проверяем, что сцены имеют файлы, но не отмечены как завершенные
+        // Check that scenes have files but are not marked as completed
         const files = await fs.readdir(folderPath);
 
-        // Проверяем числовые сцены
+        // Check numeric scenes
         for (const file of files) {
             if (file.startsWith('scene_') && file.endsWith('.mp4') && file !== 'scene_final.mp4') {
                 const sceneNumber = parseInt(file.replace('scene_', '').replace('.mp4', ''));
@@ -915,7 +915,7 @@ export class VideoWorker {
             }
         }
 
-        // Проверяем финальную сцену
+        // Check final scene
         if (files.includes('scene_final.mp4') && !completedScenes.includes(-1)) {
             const finalBaseImagePath = `${folderPath}/base_final.png`;
 

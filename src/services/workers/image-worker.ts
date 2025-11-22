@@ -30,7 +30,7 @@ export class ImageWorker {
     }
 
     private async processFile(filePath: string): Promise<void> {
-        // 1. Прочитать JSON и определить формат
+        // 1. Read JSON and determine format
         let data: ContentData;
         try {
             data = await this.fileService.readFile(filePath);
@@ -39,7 +39,7 @@ export class ImageWorker {
             return;
         }
 
-        // 2. Определить формат и обработать соответственно
+        // 2. Determine format and process accordingly
         this.logger.info(`Processing file for image generation: ${filePath}`);
         
         if (isSongWithAnimal(data) || isHalloweenTransform(data, path.basename(filePath))) {
@@ -62,7 +62,7 @@ export class ImageWorker {
         const folderName = path.basename(filePath, path.extname(filePath));
         const folderPath = path.join(this.fileService.getInProgressDir(), folderName);
         
-        // Проверяем, не обрабатывается ли уже эта папка воркером
+        // Check if this folder is already being processed by a worker
         if (await fs.pathExists(folderPath)) {
             this.logger.info(`Folder ${folderName} already exists in in-progress, skipping to avoid conflicts with worker processing`);
             return;
@@ -78,7 +78,7 @@ export class ImageWorker {
         }
 
         try {
-            // Переместить JSON из unprocessed в папку
+            // Move JSON from unprocessed to the folder
             const destJsonPath = path.join(folderPath, path.basename(filePath));
             await fs.move(filePath, destJsonPath, { overwrite: false });
 
@@ -88,7 +88,7 @@ export class ImageWorker {
                 ? data.video_prompts.map((vp: any) => ({ prompt: vp.prompt, index: vp.index }))
                 : data.prompts.map((p: any, idx: number) => ({ prompt: p.prompt, index: idx }));
 
-            // Генерировать картинки пачками по 5 с интервалом в 5 секунд между отправкой пачек
+            // Generate images in batches of 5 with 5 second intervals between batch submissions
             this.logger.info(`Starting batch generation of ${promptsToProcess.length} prompts with 5 variants each for SongWithAnimal`);
             
             const allPromises = [];
@@ -100,14 +100,14 @@ export class ImageWorker {
                     ? prompt.prompt 
                     : `${data.global_style} \n ${prompt.prompt}`;
                 
-                // Создаем подпапку для каждого промпта
+                // Create a subfolder for each prompt
                 const sceneIndex = isHalloweenTransformFormat ? prompt.index : i;
                 const promptFolderPath = path.join(folderPath, `scene_${sceneIndex}`);
                 await this.fileService.createFolder(promptFolderPath);
                 
                 this.logger.info(`Starting scene ${sceneIndex}: ${prompt.prompt}`);
                 
-                // Генерируем 5 вариантов для каждого промпта пачкой
+                // Generate 5 variants for each prompt in a batch
                 for (let variant = 1; variant <= 5; variant++) {
                     const imgPath = path.join(promptFolderPath, `variant_${variant}.png`);
                     
@@ -126,14 +126,14 @@ export class ImageWorker {
                     allPromises.push(imagePromise);
                 }
                 
-                // Добавляем задержку в 5 секунд перед отправкой следующей пачки
+                // Add a 5 second delay before sending the next batch
                 if (i < promptsToProcess.length - 1) {
                     this.logger.info(`Waiting 5 seconds before sending next batch...`);
                     await new Promise(resolve => setTimeout(resolve, 5000));
                 }
             }
             
-            // Обрабатываем additional_frames если они есть
+            // Process additional_frames if they exist
             if (data.additional_frames && data.additional_frames.length > 0) {
                 this.logger.info(`Processing ${data.additional_frames.length} additional frames with 5 variants each`);
                 
@@ -143,7 +143,7 @@ export class ImageWorker {
                     
                     this.logger.info(`Starting additional frame ${frame.index}: ${frame.group_image_prompt.substring(0, 100)}...`);
                     
-                    // Генерируем 5 вариантов для каждого additional frame в корне папки
+                    // Generate 5 variants for each additional frame in the root folder
                     for (let variant = 1; variant <= 5; variant++) {
                         const imgPath = path.join(folderPath, `additional_frame_${frame.index}_${variant}.png`);
                         
@@ -162,7 +162,7 @@ export class ImageWorker {
                         allPromises.push(imagePromise);
                     }
                     
-                    // Добавляем задержку в 5 секунд перед отправкой следующего additional frame
+                    // Add a 5 second delay before sending the next additional frame
                     if (i < data.additional_frames.length - 1) {
                         this.logger.info(`Waiting 5 seconds before sending next additional frame...`);
                         await new Promise(resolve => setTimeout(resolve, 5000));
@@ -170,13 +170,13 @@ export class ImageWorker {
                 }
             }
 
-            // Ждем завершения всех генераций
+            // Wait for all generations to complete
             this.logger.info(`All batches sent. Waiting for completion...`);
             const imageResults = await Promise.all(allPromises);
 
-            // Проверяем, сколько изображений удалось сгенерировать
-            const regularImagesCount = promptsToProcess.length * 5; // 5 вариантов для каждого промпта
-            const additionalImagesCount = data.additional_frames ? data.additional_frames.length * 5 : 0; // 5 вариантов для каждого additional frame
+            // Check how many images were successfully generated
+            const regularImagesCount = promptsToProcess.length * 5; // 5 variants for each prompt
+            const additionalImagesCount = data.additional_frames ? data.additional_frames.length * 5 : 0; // 5 variants for each additional frame
             const totalCount = regularImagesCount + additionalImagesCount;
             const successfulCount = imageResults.filter((r: any) => r.success).length;
             
@@ -186,7 +186,7 @@ export class ImageWorker {
                 this.logger.info(`  Additional frames: ${data.additional_frames.length} frames × 5 variants = ${additionalImagesCount} images`);
             }
             
-            // Детальное логирование результатов по сценам
+            // Detailed logging of results by scenes
             this.logger.info('Image generation results:');
             for (let i = 0; i < promptsToProcess.length; i++) {
                 const sceneIndex = isHalloweenTransformFormat ? promptsToProcess[i].index : i;
@@ -194,7 +194,7 @@ export class ImageWorker {
                 const sceneSuccessCount = sceneResults.filter((r: any) => r.success).length;
                 this.logger.info(`  Scene ${sceneIndex}: ${sceneSuccessCount}/5 variants generated`);
                 
-                // Детали по вариантам
+                // Details by variants
                 sceneResults.forEach((result: any) => {
                     if (result.success) {
                         this.logger.info(`    Variant ${result.variant}: ✅ Success`);
@@ -204,7 +204,7 @@ export class ImageWorker {
                 });
             }
             
-            // Логирование результатов по additional frames
+            // Logging results for additional frames
             if (data.additional_frames) {
                 for (let i = 0; i < data.additional_frames.length; i++) {
                     const frame = data.additional_frames[i];
@@ -212,7 +212,7 @@ export class ImageWorker {
                     const frameSuccessCount = frameResults.filter((r: any) => r.success).length;
                     this.logger.info(`  Additional Frame ${frame.index}: ${frameSuccessCount}/5 variants generated`);
                     
-                    // Детали по вариантам
+                    // Details by variants
                     frameResults.forEach((result: any) => {
                         if (result.success) {
                             this.logger.info(`    Variant ${result.variant}: ✅ Success`);
@@ -223,7 +223,7 @@ export class ImageWorker {
                 }
             }
             
-            // Принимаем решение о судьбе папки на основе собранных ошибок
+            // Make a decision about the folder's fate based on collected errors
             if (allErrors.length > 0) {
                 this.logger.warn(`Image generation completed with ${allErrors.length} errors:`);
                 allErrors.forEach(error => {
@@ -234,18 +234,18 @@ export class ImageWorker {
                     }
                 });
                 
-                // Если есть ошибки, перемещаем папку в failed
+                // If there are errors, move the folder to failed
                 this.logger.error(`Moving folder to failed due to ${allErrors.length} errors`);
                 await this.fileService.moveFailedFolder(folderName);
             } else {
-                // Если нет ошибок, перенести папку в processed (блокировка будет автоматически удалена)
+                // If there are no errors, move the folder to processed (lock will be automatically removed)
                 await this.fileService.moveProcessedFolder(folderName);
                 this.logger.info(`Successfully processed song with animal images: ${filePath} (${successfulCount}/${totalCount} images)`);
             }
         } catch (error) {
             this.logger.error(`Error processing song with animal images file ${filePath}:`, error);
             
-            // В случае критической ошибки (не связанной с генерацией изображений) перемещаем в failed
+            // In case of a critical error (not related to image generation) move to failed
             try {
                 await this.fileService.moveFailedFolder(folderName);
             } catch (moveError) {
@@ -264,29 +264,29 @@ export class ImageWorker {
         const folderName = path.basename(filePath, path.extname(filePath));
         const folderPath = path.join(this.fileService.getInProgressDir(), folderName);
         
-        // Проверяем, не обрабатывается ли уже эта папка воркером
+        // Check if this folder is already being processed by a worker
         if (await fs.pathExists(folderPath)) {
             this.logger.info(`Folder ${folderName} already exists in in-progress, skipping to avoid conflicts with worker processing`);
             return;
         }
 
-        // Создаем папку ПЕРЕД получением блокировки
+        // Create folder BEFORE acquiring lock
         await this.fileService.createFolder(folderPath);
 
         const lockAcquired = await this.lockService.acquireLock(folderPath);
         if (!lockAcquired) {
             this.logger.warn(`Could not acquire lock for folder: ${folderPath}, skipping.`);
-            // Удаляем созданную папку если не удалось получить блокировку
+            // Remove the created folder if we couldn't acquire the lock
             await fs.remove(folderPath);
             return;
         }
 
         try {
-            // Переместить JSON из unprocessed в папку
+            // Move JSON from unprocessed to the folder
             const destJsonPath = path.join(folderPath, path.basename(filePath));
             await fs.move(filePath, destJsonPath, { overwrite: false });
             
-            // Генерировать 5 картинок параллельно
+            // Generate 5 images in parallel
             const imagePromises = [];
             for (let i = 1; i <= 5; i++) {
                 const imgPath = path.join(folderPath, `base_0_${i}.png`);
@@ -294,14 +294,14 @@ export class ImageWorker {
             }
             await Promise.all(imagePromises);
             
-            // Перенести папку в processed (блокировка будет автоматически удалена)
+            // Move folder to processed (lock will be automatically removed)
             await this.fileService.moveProcessedFolder(folderName);
             
             this.logger.info(`Successfully processed study format file: ${filePath}`);
         } catch (error) {
             this.logger.error(`Error processing study format file ${filePath}:`, error);
             
-            // В случае ошибки перемещаем в failed (блокировка будет автоматически удалена)
+            // In case of error, move to failed (lock will be automatically removed)
             try {
                 await this.fileService.moveFailedFolder(folderName);
             } catch (moveError) {

@@ -24,7 +24,7 @@ export class ContentGenerationWorker {
             try {
                 let workFound = false;
 
-                // 1. Image Generation Phase: обрабатываем JSON файлы и генерируем картинки
+                // 1. Image Generation Phase: process JSON files and generate images
                 const unprocessedFiles = await this.fileService.getUnprocessedFiles();
                 if (unprocessedFiles.length > 0) {
                     this.logger.info(`Found ${unprocessedFiles.length} unprocessed JSON files, running image worker for image generation`);
@@ -32,7 +32,7 @@ export class ContentGenerationWorker {
                     workFound = true;
                 }
 
-                // 2. Video Generation Phase: обрабатываем папки с картинками и JSON файлы для видео
+                // 2. Video Generation Phase: process folders with images and JSON files for video
                 const unprocessedFolders = await this.fileService.getUnprocessedFolders();
                 const unprocessedFilesForVideo = await this.fileService.getUnprocessedFiles();
                 
@@ -42,7 +42,7 @@ export class ContentGenerationWorker {
                     workFound = true;
                 }
 
-                // Если работы не было, ждем
+                // If there was no work, wait
                 if (!workFound) {
                     this.logger.info('No work to process, waiting...');
                     const jitter = Math.floor(Math.random() * 5000);

@@ -108,7 +108,7 @@ export class FileService {
 
             await fs.ensureDir(this.processedDir);
             
-            // Удаляем .lock файл перед перемещением папки
+            // Remove .lock file before moving the folder
             await this.lockService.forceRemoveLock(sourcePath);
             
             // Double-check source still exists after lock removal
@@ -135,7 +135,7 @@ export class FileService {
 
             await fs.ensureDir(this.failedDir);
             
-            // Удаляем .lock файл перед перемещением папки
+            // Remove .lock file before moving the folder
             await this.lockService.forceRemoveLock(sourcePath);
             
             // Double-check source still exists after lock removal
