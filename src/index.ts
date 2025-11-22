@@ -8,20 +8,16 @@ import { ContentGenerationWorker } from './worker';
 import { Logger } from './utils';
 import { fal } from '@fal-ai/client';
 
-// Configure the fal.ai API key (unless in mock mode)
+// Configure the fal.ai API key
 const logger = new Logger();
-if (process.env.MOCK_API === 'true') {
-    logger.info('Running in mock mode — no API key required.');
-} else {
-    if (!process.env.FAL_KEY) {
-        logger.error('ERROR: FAL_KEY environment variable is not set. Please set it to your fal.ai API key.');
-        process.exit(1);
-    }
-
-    fal.config({
-        credentials: process.env.FAL_KEY
-    });
+if (!process.env.FAL_KEY) {
+    logger.error('ERROR: FAL_KEY environment variable is not set. Please set it to your fal.ai API key.');
+    process.exit(1);
 }
+
+fal.config({
+    credentials: process.env.FAL_KEY
+});
 
 /**
  * Main entry point for the content generation worker
@@ -30,7 +26,7 @@ async function main(): Promise<void> {
 
     try {
         // Number of worker instances to create
-        const workerCount = 5;
+        const workerCount = 2;
         logger.info(`Initializing ${workerCount} content generation workers`);
 
         // Create multiple worker instances

@@ -111,7 +111,7 @@ export class ImageWorker {
                 for (let variant = 1; variant <= 5; variant++) {
                     const imgPath = path.join(promptFolderPath, `variant_${variant}.png`);
                     
-                    const imagePromise = this.imageService.generateImage(combinedPrompt, imgPath, 'isSongWithAnimal', path.basename(filePath))
+                    const imagePromise = this.imageService.generateImage(combinedPrompt, imgPath, path.basename(filePath))
                         .then(() => {
                             this.logger.info(`Successfully generated variant ${variant} for scene ${sceneIndex}`);
                             return { scene: sceneIndex, variant, success: true };
@@ -147,7 +147,7 @@ export class ImageWorker {
                     for (let variant = 1; variant <= 5; variant++) {
                         const imgPath = path.join(folderPath, `additional_frame_${frame.index}_${variant}.png`);
                         
-                        const imagePromise = this.imageService.generateImage(combinedPrompt, imgPath, 'isSongWithAnimal', path.basename(filePath))
+                        const imagePromise = this.imageService.generateImage(combinedPrompt, imgPath, path.basename(filePath))
                             .then(() => {
                                 this.logger.info(`Successfully generated additional frame ${frame.index} variant ${variant}`);
                                 return { scene: `additional_frame_${frame.index}`, variant, success: true };
@@ -290,7 +290,7 @@ export class ImageWorker {
             const imagePromises = [];
             for (let i = 1; i <= 5; i++) {
                 const imgPath = path.join(folderPath, `base_0_${i}.png`);
-                imagePromises.push(this.imageService.generateImage(firstScene.image_prompt, imgPath, 'isStudy', path.basename(filePath)));
+                imagePromises.push(this.imageService.generateImage(firstScene.image_prompt, imgPath, path.basename(filePath)));
             }
             await Promise.all(imagePromises);
             

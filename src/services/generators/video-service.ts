@@ -52,10 +52,6 @@ export class VideoService {
             durationStr = "10";
         }
 
-        if (process.env.MOCK_API === 'true') {
-            return this.mockGenerateVideo(prompt, baseImagePath, outputPath);
-        }
-
         try {
             // Read base image file and convert to base64
             const imageBuffer = await fs.readFile(baseImagePath);
@@ -177,22 +173,6 @@ export class VideoService {
         }
     }
 
-    /**
-     * Mock implementation of video generation for testing
-     */
-    private async mockGenerateVideo(prompt: string, baseImagePath: string, outputPath: string): Promise<void> {
-        this.logger.info(`[MOCK] Generating video with prompt: ${prompt}`);
-        try {
-            const outputDir = path.dirname(outputPath);
-            await fs.ensureDir(outputDir);
-            await fs.writeFile(outputPath, `Mock video generated from prompt: ${prompt}\nBase image: ${baseImagePath}`);
-            await this.delay(5000);
-            this.logger.info(`[MOCK] Video generated successfully: ${outputPath}`);
-        } catch (error) {
-            this.logger.error(`[MOCK] Error generating video: ${error}`);
-            throw new Error(`Failed to generate mock video: ${error}`);
-        }
-    }
 
     /**
      * Helper method to simulate delay
@@ -367,10 +347,6 @@ export class VideoService {
         this.logger.info(`Extracting last frame from video: ${videoPath}`);
         this.logger.info(`Frame will be saved to: ${outputPath}`);
 
-        if (process.env.MOCK_API === 'true') {
-            return this.mockExtractLastFrame(videoPath, outputPath);
-        }
-
         try {
             const duration = await this.getVideoDuration(videoPath);
             const timestamp = Math.max(0, duration - offsetSeconds);
@@ -465,20 +441,4 @@ export class VideoService {
         });
     }
 
-    /**
-     * Mock implementation of frame extraction for testing
-     */
-    private async mockExtractLastFrame(videoPath: string, outputPath: string): Promise<void> {
-        this.logger.info(`[MOCK] Extracting last frame from video: ${videoPath}`);
-        try {
-            const outputDir = path.dirname(outputPath);
-            await fs.ensureDir(outputDir);
-            await fs.writeFile(outputPath, `Mock frame extracted from video: ${videoPath}`);
-            await this.delay(2000);
-            this.logger.info(`[MOCK] Frame extracted successfully: ${outputPath}`);
-        } catch (error) {
-            this.logger.error(`[MOCK] Error extracting frame: ${error}`);
-            throw new Error(`Failed to extract mock frame: ${error}`);
-        }
-    }
 }

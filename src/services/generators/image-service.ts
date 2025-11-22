@@ -20,6 +20,12 @@ export class ImageService {
     private readonly MAX_WAIT_TIME_MS = 300000; // 5 minutes
     private readonly DEFAULT_IMAGE_MODEL = 'fal-ai/minimax/image-01';
     private readonly HALLOWEEN_IMAGE_MODEL = 'fal-ai/imagen4/preview';
+    private readonly HALLOWEEN_FILE_PATTERNS = [
+        'halloweendance',
+        'halloweentransform',
+        'halloweenpatchwork',
+        'halloweentransformtwoframe'
+    ];
 
     /**
      * Create a new ImageService instance
@@ -29,12 +35,15 @@ export class ImageService {
     }
 
     /**
-     * Determine the appropriate model based on format and filename
+     * Determine the appropriate model based on filename
      */
-    private getModelForGeneration(format: string, filename: string): string {
-        if (format === 'isSongWithAnimal' && 
-            (filename.toLowerCase().includes('halloweennew') || 
-             filename.toLowerCase().includes('halloweentransform'))) {
+    private getModelForGeneration(filename: string): string {
+        const lowerFilename = filename.toLowerCase();
+        const isHalloweenFile = this.HALLOWEEN_FILE_PATTERNS.some(pattern => 
+            lowerFilename.includes(pattern)
+        );
+        
+        if (isHalloweenFile) {
             this.logger.info(`Using Halloween model for file: ${filename}`);
             return this.HALLOWEEN_IMAGE_MODEL;
         }
@@ -46,18 +55,13 @@ export class ImageService {
     /**
      * Generate an image from a prompt and save it to the specified path
      */
-    public async generateImage(prompt: string, outputPath: string, format?: string, filename?: string): Promise<{ requestId: string, prompt: string } | void> {
+    public async generateImage(prompt: string, outputPath: string, filename?: string): Promise<{ requestId: string, prompt: string } | void> {
         this.logger.info(`Generating image with prompt: ${prompt}`);
         this.logger.info(`Image will be saved to: ${outputPath}`);
 
         // Determine the appropriate model
-        const model = this.getModelForGeneration(format || '', filename || '');
+        const model = this.getModelForGeneration(filename || '');
         this.logger.info(`Using model: ${model}`);
-
-        // Mock mode
-        if (process.env.MOCK_API === 'true') {
-            return this.mockGenerateImage(prompt, outputPath, format, filename);
-        }
 
         try {
             const inputParams: any = {
@@ -332,23 +336,6 @@ export class ImageService {
         );
     }
 
-    /**
-     * Mock implementation of image generation for testing
-     */
-    private async mockGenerateImage(prompt: string, outputPath: string, format?: string, filename?: string): Promise<void> {
-        this.logger.info(`[MOCK] Generating image with prompt: ${prompt}`);
-
-        try {
-            const outputDir = path.dirname(outputPath);
-            await fs.ensureDir(outputDir);
-            await fs.writeFile(outputPath, `Mock image generated from prompt: ${prompt}`);
-            await this.delay(5000); // Simulate API call delay
-            this.logger.info(`[MOCK] Image generated successfully: ${outputPath}`);
-        } catch (error) {
-            this.logger.error(`[MOCK] Error generating image: ${error}`);
-            throw new Error(`Failed to generate mock image: ${error}`);
-        }
-    }
 }
 
 /* END GENAI */
