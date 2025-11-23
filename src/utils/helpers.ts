@@ -1,6 +1,6 @@
 /* START GENAI */
 
-import { GenerationData, NewFormatWithArraysData } from '../types';
+import { GenerationData, ScenePromptsData } from '../types';
 
 /**
  * Helper functions for the content generation worker
@@ -49,6 +49,21 @@ export function isHalloweenFile(filename: string): boolean {
  */
 export function isHalloweenTransform(filename: string): boolean {
     return filename.toLowerCase().includes(HALLOWEEN_TRANSFORM_PATTERN);
+}
+
+/**
+ * Poems file pattern for format detection
+ */
+export const POEMS_FILE_PATTERN = 'poems';
+
+/**
+ * Check if filename matches poems file pattern
+ * @param filename The filename to check
+ * @returns True if filename matches poems pattern (contains 'poems')
+ */
+export function isPoemsFile(filename: string): boolean {
+    const lowerFilename = filename.toLowerCase();
+    return lowerFilename.includes(POEMS_FILE_PATTERN);
 }
 
 /**

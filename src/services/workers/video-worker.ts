@@ -2,7 +2,7 @@ import { FileService } from '../core/file-service';
 import { LockService } from '../core/lock-service';
 import { StateService } from '../core/state-service';
 import { VideoService, VideoGenerationTask, VideoGenerationResult } from '../generators/video-service';
-import { Logger, isHalloweenFile } from '../../utils';
+import { Logger, isHalloweenFile, isPoemsFile } from '../../utils';
 import { ContentType, WorkerConfig } from '../../types';
 import * as path from 'path';
 import * as fs from 'fs-extra';
@@ -26,6 +26,11 @@ export class VideoWorker {
             try {
                 // Look for folders in unprocessed for video processing
                 const unprocessedFolders = await this.fileService.getUnprocessedFolders();
+                this.logger.info(`Found ${unprocessedFolders.length} folders in unprocessed directory`);
+                
+                if (unprocessedFolders.length > 0) {
+                    this.logger.info(`Folder names: ${unprocessedFolders.map(f => path.basename(f)).join(', ')}`);
+                }
                 
                 // Find first folder of any known type (only by name, structure check happens inside)
                 const folderMatch = this.findFolderByType(unprocessedFolders);
@@ -50,16 +55,21 @@ export class VideoWorker {
         // Check folders in priority order
         for (const folder of folders) {
             const folderName = path.basename(folder);
+            this.logger.info(`Checking folder: ${folderName}`);
             
             // Check Halloween pattern (only name, no structure check)
             if (isHalloweenFile(folderName)) {
+                this.logger.info(`Folder ${folderName} matched Halloween pattern`);
                 return { folder, type: ContentType.HALLOWEEN };
             }
             
-            // Future: add checks for other types
-            // if (isChristmasFile(folderName)) {
-            //     return { folder, type: ContentType.CHRISTMAS };
-            // }
+            // Check Poems pattern (only name, no structure check)
+            if (isPoemsFile(folderName)) {
+                this.logger.info(`Folder ${folderName} matched Poems pattern`);
+                return { folder, type: ContentType.POEMS };
+            }
+            
+            this.logger.info(`Folder ${folderName} did not match any known pattern`);
         }
         
         return null;

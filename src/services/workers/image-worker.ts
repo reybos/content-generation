@@ -1,7 +1,7 @@
 import { FileService } from '../core/file-service';
 import { ImageService, ImageGenerationTask, ImageGenerationResult } from '../generators/image-service';
 import { ContentData, ContentType, WorkerConfig } from '../../types';
-import { isHalloweenFile, sleep } from '../../utils';
+import { isHalloweenFile, isPoemsFile, sleep } from '../../utils';
 import { Logger } from '../../utils';
 import * as path from 'path';
 
@@ -46,10 +46,9 @@ export class ImageWorker {
         if (isHalloweenFile(name)) {
             return ContentType.HALLOWEEN;
         }
-        // Future: add checks for other types
-        // if (isChristmasFile(name)) {
-        //     return ContentType.CHRISTMAS;
-        // }
+        if (isPoemsFile(name)) {
+            return ContentType.POEMS;
+        }
         return null;
     }
 

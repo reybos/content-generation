@@ -476,9 +476,8 @@ export class VideoService {
         switch (contentType) {
             case ContentType.HALLOWEEN:
                 return this.prepareHalloweenTasks(folderPath);
-            // Future: add cases for other types
-            // case ContentType.CHRISTMAS:
-            //     return this.prepareChristmasTasks(folderPath);
+            case ContentType.POEMS:
+                return this.prepareHalloweenTasks(folderPath);
             default:
                 throw new Error(`No handler for content type: ${contentType}`);
         }

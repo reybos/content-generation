@@ -3,8 +3,8 @@
 import { fal } from '@fal-ai/client';
 import fs from 'fs-extra';
 import path from 'path';
-import {Logger, HALLOWEEN_FILE_PATTERNS, isHalloweenFile, isHalloweenTransform, validatePromptLength} from '../../utils';
-import { ContentType, NewFormatWithArraysData, ContentData, WorkerConfig } from '../../types';
+import {Logger, HALLOWEEN_FILE_PATTERNS, isHalloweenFile, isHalloweenTransform, isPoemsFile, validatePromptLength} from '../../utils';
+import { ContentType, ScenePromptsData, ContentData, WorkerConfig } from '../../types';
 import { FileService } from '../core/file-service';
 
 interface ImageGenerationStatus {
@@ -65,6 +65,11 @@ export class ImageService {
         
         if (isHalloweenFile(filename)) {
             this.logger.info(`Using Halloween model for file: ${filename}`);
+            return this.HALLOWEEN_IMAGE_MODEL;
+        }
+        
+        if (isPoemsFile(filename)) {
+            this.logger.info(`Using Halloween model for poems file: ${filename}`);
             return this.HALLOWEEN_IMAGE_MODEL;
         }
         
@@ -366,10 +371,9 @@ export class ImageService {
     ): Promise<{ sceneTasks: ImageGenerationTask[]; additionalFrameTasks: ImageGenerationTask[] }> {
         switch (contentType) {
             case ContentType.HALLOWEEN:
-                return this.prepareHalloweenImageTasks(folderPath, filePath, data as NewFormatWithArraysData);
-            // Future: add cases for other types
-            // case ContentType.CHRISTMAS:
-            //     return this.prepareChristmasImageTasks(folderPath, filePath, data);
+                return this.prepareHalloweenImageTasks(folderPath, filePath, data as ScenePromptsData);
+            case ContentType.POEMS:
+                return this.prepareHalloweenImageTasks(folderPath, filePath, data as ScenePromptsData);
             default:
                 throw new Error(`No handler for content type: ${contentType}`);
         }
@@ -381,7 +385,7 @@ export class ImageService {
     private async prepareHalloweenImageTasks(
         folderPath: string,
         filePath: string,
-        data: NewFormatWithArraysData
+        data: ScenePromptsData
     ): Promise<{ sceneTasks: ImageGenerationTask[]; additionalFrameTasks: ImageGenerationTask[] }> {
         const isHalloweenTransformFormat = isHalloweenTransform(path.basename(filePath));
 

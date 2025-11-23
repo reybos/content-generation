@@ -64,7 +64,6 @@ export const VideoPromptSchema = z.object({
 export type VideoPrompt = z.infer<typeof VideoPromptSchema>;
 
 export const NewFormatDataSchema = z.object({
-    global_style: z.string(),
     prompts: z.array(PromptSchema),
     title: z.string(),
     description: z.string(),
@@ -74,7 +73,6 @@ export type NewFormatData = z.infer<typeof NewFormatDataSchema>;
 
 // New format with video prompts schema and type
 export const NewFormatWithVideoDataSchema = z.object({
-    global_style: z.string(),
     prompts: z.array(PromptSchema),
     video_prompts: z.array(VideoPromptSchema),
     title: z.string(),
@@ -92,9 +90,8 @@ export const AdditionalFrameSchema = z.object({
 });
 export type AdditionalFrame = z.infer<typeof AdditionalFrameSchema>;
 
-// New format with arrays for titles, descriptions, and hashtags
-export const NewFormatWithArraysDataSchema = z.object({
-    global_style: z.string(),
+// Scene prompts format with arrays for titles, descriptions, and hashtags
+export const ScenePromptsDataSchema = z.object({
     prompts: z.array(PromptSchema),
     video_prompts: z.array(VideoPromptSchema),
     titles: z.array(z.string()),
@@ -102,13 +99,13 @@ export const NewFormatWithArraysDataSchema = z.object({
     hashtags: z.array(z.string()),
     additional_frames: z.array(AdditionalFrameSchema).optional()
 });
-export type NewFormatWithArraysData = z.infer<typeof NewFormatWithArraysDataSchema>;
+export type ScenePromptsData = z.infer<typeof ScenePromptsDataSchema>;
 
 // Union type for all formats
 export const ContentDataSchema = z.union([
     GenerationDataSchema, 
     NewFormatDataSchema, 
     NewFormatWithVideoDataSchema,
-    NewFormatWithArraysDataSchema
+    ScenePromptsDataSchema
 ]);
 export type ContentData = z.infer<typeof ContentDataSchema>;

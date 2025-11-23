@@ -6,8 +6,7 @@
  */
 export enum ContentType {
     HALLOWEEN = 'halloween',
-    // Future: add other types
-    // CHRISTMAS = 'christmas',
+    POEMS = 'poems',
 }
 
 /* END GENAI */
