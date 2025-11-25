@@ -368,7 +368,7 @@ export class ImageService {
         folderPath: string,
         filePath: string,
         data: ContentData
-    ): Promise<{ sceneTasks: ImageGenerationTask[]; additionalFrameTasks: ImageGenerationTask[] }> {
+    ): Promise<{ sceneTasks: ImageGenerationTask[]; groupFrameTasks: ImageGenerationTask[] }> {
         switch (contentType) {
             case ContentType.HALLOWEEN:
                 return this.prepareHalloweenImageTasks(folderPath, filePath, data as ScenePromptsData);
@@ -386,7 +386,7 @@ export class ImageService {
         folderPath: string,
         filePath: string,
         data: ScenePromptsData
-    ): Promise<{ sceneTasks: ImageGenerationTask[]; additionalFrameTasks: ImageGenerationTask[] }> {
+    ): Promise<{ sceneTasks: ImageGenerationTask[]; groupFrameTasks: ImageGenerationTask[] }> {
         const isHalloweenTransformFormat = isHalloweenTransform(path.basename(filePath));
 
         // Determine which prompts array to use based on format
@@ -420,26 +420,26 @@ export class ImageService {
             }
         }
 
-        // Prepare tasks for additional frames if they exist
-        const additionalFrameTasks: ImageGenerationTask[] = [];
-        if (data.additional_frames && data.additional_frames.length > 0) {
-            for (let i = 0; i < data.additional_frames.length; i++) {
-                const frame = data.additional_frames[i];
+        // Prepare tasks for group frames if they exist
+        const groupFrameTasks: ImageGenerationTask[] = [];
+        if (data.group_frames && data.group_frames.length > 0) {
+            for (let i = 0; i < data.group_frames.length; i++) {
+                const frame = data.group_frames[i];
                 
                 // Validate prompt length
                 const promptValidation = validatePromptLength(frame.group_image_prompt, this.MAX_PROMPT_LENGTH);
                 if (!promptValidation.isValid) {
-                    throw new Error(`Additional frame ${frame.index}: ${promptValidation.error}`);
+                    throw new Error(`Group frame ${frame.index}: ${promptValidation.error}`);
                 }
 
-                // Create variants for each additional frame
+                // Create variants for each group frame
                 for (let variant = 1; variant <= this.VARIANTS_PER_SCENE; variant++) {
-                    const additionalFrameFolderPath = path.join(folderPath, `additional_frame_${frame.index}`);
-                    const imgPath = path.join(additionalFrameFolderPath, `variant_${variant}.png`);
+                    const groupFrameFolderPath = path.join(folderPath, `group_frame_${frame.index}`);
+                    const imgPath = path.join(groupFrameFolderPath, `variant_${variant}.png`);
                     
-                    additionalFrameTasks.push({
+                    groupFrameTasks.push({
                         prompt: frame.group_image_prompt,
-                        sceneIndex: `additional_frame_${frame.index}`,
+                        sceneIndex: `group_frame_${frame.index}`,
                         outputPath: imgPath,
                         variant
                     });
@@ -447,7 +447,7 @@ export class ImageService {
             }
         }
 
-        return { sceneTasks, additionalFrameTasks };
+        return { sceneTasks, groupFrameTasks };
     }
 
     /**
@@ -456,7 +456,7 @@ export class ImageService {
     public async generateImageBatch(
         tasks: ImageGenerationTask[],
         filePath: string,
-        type: 'scene' | 'additional_frame'
+        type: 'scene' | 'group_frame'
     ): Promise<ImageGenerationResult[]> {
         const allResults: ImageGenerationResult[] = [];
 
@@ -477,7 +477,7 @@ export class ImageService {
             const sceneIndex = scenes[i];
             const sceneTasks = tasksByScene.get(sceneIndex)!;
             
-            // Create subfolder for scene or additional frame
+            // Create subfolder for scene or group frame
             const promptFolderPath = path.dirname(sceneTasks[0].outputPath);
             await this.fileService.createFolder(promptFolderPath);
 

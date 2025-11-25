@@ -472,7 +472,7 @@ export class VideoService {
     public async prepareVideoTasks(
         contentType: ContentType,
         folderPath: string
-    ): Promise<{ sceneTasks: VideoGenerationTask[]; additionalFrameTasks: VideoGenerationTask[] }> {
+    ): Promise<{ sceneTasks: VideoGenerationTask[]; groupFrameTasks: VideoGenerationTask[] }> {
         switch (contentType) {
             case ContentType.HALLOWEEN:
                 return this.prepareHalloweenTasks(folderPath);
@@ -489,7 +489,7 @@ export class VideoService {
     /**
      * Prepare Halloween video generation tasks
      */
-    private async prepareHalloweenTasks(folderPath: string): Promise<{ sceneTasks: VideoGenerationTask[]; additionalFrameTasks: VideoGenerationTask[] }> {
+    private async prepareHalloweenTasks(folderPath: string): Promise<{ sceneTasks: VideoGenerationTask[]; groupFrameTasks: VideoGenerationTask[] }> {
         // Read files in folder
         const files = await fs.readdir(folderPath);
         
@@ -540,42 +540,42 @@ export class VideoService {
             });
         }
 
-        // Process additional frames if they exist
-        const additionalFramesCount = newFormatData.additional_frames ? newFormatData.additional_frames.length : 0;
-        const additionalFrameTasks: VideoGenerationTask[] = [];
+        // Process group frames if they exist
+        const groupFramesCount = newFormatData.group_frames ? newFormatData.group_frames.length : 0;
+        const groupFrameTasks: VideoGenerationTask[] = [];
         
-        if (additionalFramesCount > 0) {
-            const additionalFrameImages = files.filter(file => file.match(/^additional_frame_\d+\.png$/));
+        if (groupFramesCount > 0) {
+            const groupFrameImages = files.filter(file => file.match(/^group_frame_\d+\.png$/));
             
-            // Check additional frame images count matches additional_frames count
-            if (additionalFrameImages.length !== additionalFramesCount) {
-                throw new Error(`Mismatch between additional_frames count (${additionalFramesCount}) and additional frame images count (${additionalFrameImages.length})`);
+            // Check group frame images count matches group_frames count
+            if (groupFrameImages.length !== groupFramesCount) {
+                throw new Error(`Mismatch between group_frames count (${groupFramesCount}) and group frame images count (${groupFrameImages.length})`);
             }
 
-            // Prepare tasks for additional frames
-            for (let i = 0; i < additionalFramesCount; i++) {
-                const frame = newFormatData.additional_frames[i];
+            // Prepare tasks for group frames
+            for (let i = 0; i < groupFramesCount; i++) {
+                const frame = newFormatData.group_frames[i];
                 if (!frame.group_video_prompt) {
-                    throw new Error(`Missing group_video_prompt for additional frame at index ${i}`);
+                    throw new Error(`Missing group_video_prompt for group frame at index ${i}`);
                 }
                 
                 // Validate prompt length
                 const promptValidation = validatePromptLength(frame.group_video_prompt, this.MAX_PROMPT_LENGTH);
                 if (!promptValidation.isValid) {
-                    throw new Error(`Additional frame ${frame.index}: ${promptValidation.error}`);
+                    throw new Error(`Group frame ${frame.index}: ${promptValidation.error}`);
                 }
                 
-                additionalFrameTasks.push({
-                    imagePath: path.join(folderPath, `additional_frame_${frame.index}.png`),
+                groupFrameTasks.push({
+                    imagePath: path.join(folderPath, `group_frame_${frame.index}.png`),
                     prompt: frame.group_video_prompt,
-                    outputPath: path.join(folderPath, `additional_frame_${frame.index}.mp4`),
+                    outputPath: path.join(folderPath, `group_frame_${frame.index}.mp4`),
                     duration: this.ADDITIONAL_SCENE_DURATION,
-                    index: `additional_frame_${frame.index}`
+                    index: `group_frame_${frame.index}`
                 });
             }
         }
 
-        return { sceneTasks, additionalFrameTasks };
+        return { sceneTasks, groupFrameTasks };
     }
 
     /**
@@ -585,7 +585,7 @@ export class VideoService {
     public async prepareDirectVideoTasks(
         folderPath: string,
         blankVideoPath: string
-    ): Promise<{ sceneTasks: VideoGenerationTask[]; additionalFrameTasks: VideoGenerationTask[] }> {
+    ): Promise<{ sceneTasks: VideoGenerationTask[]; groupFrameTasks: VideoGenerationTask[] }> {
         // Read files in folder
         const files = await fs.readdir(folderPath);
         
@@ -633,35 +633,35 @@ export class VideoService {
             });
         }
 
-        // Process additional frames if they exist
-        const additionalFramesCount = newFormatData.additional_frames ? newFormatData.additional_frames.length : 0;
-        const additionalFrameTasks: VideoGenerationTask[] = [];
+        // Process group frames if they exist
+        const groupFramesCount = newFormatData.group_frames ? newFormatData.group_frames.length : 0;
+        const groupFrameTasks: VideoGenerationTask[] = [];
         
-        if (additionalFramesCount > 0) {
-            // Prepare tasks for additional frames using blank-video.png as base image
-            for (let i = 0; i < additionalFramesCount; i++) {
-                const frame = newFormatData.additional_frames[i];
+        if (groupFramesCount > 0) {
+            // Prepare tasks for group frames using blank-video.png as base image
+            for (let i = 0; i < groupFramesCount; i++) {
+                const frame = newFormatData.group_frames[i];
                 if (!frame.group_video_prompt) {
-                    throw new Error(`Missing group_video_prompt for additional frame at index ${i}`);
+                    throw new Error(`Missing group_video_prompt for group frame at index ${i}`);
                 }
                 
                 // Validate prompt length
                 const promptValidation = validatePromptLength(frame.group_video_prompt, this.MAX_PROMPT_LENGTH);
                 if (!promptValidation.isValid) {
-                    throw new Error(`Additional frame ${frame.index}: ${promptValidation.error}`);
+                    throw new Error(`Group frame ${frame.index}: ${promptValidation.error}`);
                 }
                 
-                additionalFrameTasks.push({
+                groupFrameTasks.push({
                     imagePath: blankVideoPath,
                     prompt: frame.group_video_prompt,
-                    outputPath: path.join(folderPath, `additional_frame_${frame.index}.mp4`),
+                    outputPath: path.join(folderPath, `group_frame_${frame.index}.mp4`),
                     duration: this.ADDITIONAL_SCENE_DURATION,
-                    index: `additional_frame_${frame.index}`
+                    index: `group_frame_${frame.index}`
                 });
             }
         }
 
-        return { sceneTasks, additionalFrameTasks };
+        return { sceneTasks, groupFrameTasks };
     }
 
     /**
@@ -670,7 +670,7 @@ export class VideoService {
     public async generateVideoBatch(
         tasks: VideoGenerationTask[],
         folderPath: string,
-        type: 'scene' | 'additional_frame'
+        type: 'scene' | 'group_frame'
     ): Promise<VideoGenerationResult[]> {
         const allErrors: Array<{ type: string; index: number | string; error: string }> = [];
         const allResults: VideoGenerationResult[] = [];

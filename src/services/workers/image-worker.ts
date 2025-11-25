@@ -57,12 +57,12 @@ export class ImageWorker {
 
         // 4. Prepare tasks (type-specific)
         let sceneTasks: ImageGenerationTask[] = [];
-        let additionalFrameTasks: ImageGenerationTask[] = [];
+        let groupFrameTasks: ImageGenerationTask[] = [];
         
         try {
             const tasks = await this.imageService.prepareImageTasks(contentType, folderPath, filePath, data);
             sceneTasks = tasks.sceneTasks;
-            additionalFrameTasks = tasks.additionalFrameTasks;
+            groupFrameTasks = tasks.groupFrameTasks;
         } catch (error) {
             this.logger.error(`Error preparing tasks for ${contentType} images file ${filePath}:`, error);
             // In case of error during task preparation, move to failed
@@ -76,7 +76,7 @@ export class ImageWorker {
 
         // 5. Process images (common logic for all types)
         try {
-            await this.processImages(folderPath, folderName, filePath, sceneTasks, additionalFrameTasks);
+            await this.processImages(folderPath, folderName, filePath, sceneTasks, groupFrameTasks);
         } catch (error) {
             this.logger.error(`Error processing ${contentType} images file ${filePath}:`, error);
             // In case of a critical error, move to failed
@@ -94,7 +94,7 @@ export class ImageWorker {
         folderName: string,
         filePath: string,
         sceneTasks: ImageGenerationTask[],
-        additionalFrameTasks: ImageGenerationTask[]
+        groupFrameTasks: ImageGenerationTask[]
     ): Promise<void> {
         const allResults: ImageGenerationResult[] = [];
 
@@ -107,25 +107,25 @@ export class ImageWorker {
             allResults.push(...sceneResults);
         }
 
-        // Generate images for additional frames if they exist
-        if (additionalFrameTasks.length > 0) {
-            const additionalFrameCount = additionalFrameTasks.length / this.VARIANTS_PER_SCENE;
-            this.logger.info(`Processing ${additionalFrameCount} additional frames with ${this.VARIANTS_PER_SCENE} variants each`);
+        // Generate images for group frames if they exist
+        if (groupFrameTasks.length > 0) {
+            const groupFrameCount = groupFrameTasks.length / this.VARIANTS_PER_SCENE;
+            this.logger.info(`Processing ${groupFrameCount} group frames with ${this.VARIANTS_PER_SCENE} variants each`);
             
-            const additionalFrameResults = await this.imageService.generateImageBatch(additionalFrameTasks, filePath, 'additional_frame');
-            allResults.push(...additionalFrameResults);
+            const groupFrameResults = await this.imageService.generateImageBatch(groupFrameTasks, filePath, 'group_frame');
+            allResults.push(...groupFrameResults);
         }
 
         // Calculate statistics
         const totalCount = allResults.length;
         const successfulCount = allResults.filter(r => r.success).length;
         const sceneCount = sceneTasks.length / this.VARIANTS_PER_SCENE;
-        const additionalFrameCount = additionalFrameTasks.length / this.VARIANTS_PER_SCENE;
+        const groupFrameCount = groupFrameTasks.length / this.VARIANTS_PER_SCENE;
 
         this.logger.info(`Generated ${successfulCount}/${totalCount} images successfully`);
         this.logger.info(`  Regular scenes: ${sceneCount} scenes × ${this.VARIANTS_PER_SCENE} variants = ${sceneTasks.length} images`);
-        if (additionalFrameCount > 0) {
-            this.logger.info(`  Additional frames: ${additionalFrameCount} frames × ${this.VARIANTS_PER_SCENE} variants = ${additionalFrameTasks.length} images`);
+        if (groupFrameCount > 0) {
+            this.logger.info(`  Group frames: ${groupFrameCount} frames × ${this.VARIANTS_PER_SCENE} variants = ${groupFrameTasks.length} images`);
         }
 
         // Detailed logging of results by scenes

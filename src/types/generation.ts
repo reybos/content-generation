@@ -81,14 +81,14 @@ export const NewFormatWithVideoDataSchema = z.object({
 });
 export type NewFormatWithVideoData = z.infer<typeof NewFormatWithVideoDataSchema>;
 
-// Additional frame schema and type
-export const AdditionalFrameSchema = z.object({
+// Group frame schema and type
+export const GroupFrameSchema = z.object({
     index: z.number(),
     lines: z.array(z.string()),
     group_image_prompt: z.string(),
     group_video_prompt: z.string()
 });
-export type AdditionalFrame = z.infer<typeof AdditionalFrameSchema>;
+export type GroupFrame = z.infer<typeof GroupFrameSchema>;
 
 // Scene prompts format with arrays for titles, descriptions, and hashtags
 export const ScenePromptsDataSchema = z.object({
@@ -97,7 +97,7 @@ export const ScenePromptsDataSchema = z.object({
     titles: z.array(z.string()),
     descriptions: z.array(z.string()),
     hashtags: z.array(z.string()),
-    additional_frames: z.array(AdditionalFrameSchema).optional()
+    group_frames: z.array(GroupFrameSchema).optional()
 });
 export type ScenePromptsData = z.infer<typeof ScenePromptsDataSchema>;
 
