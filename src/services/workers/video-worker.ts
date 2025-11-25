@@ -19,39 +19,7 @@ export class VideoWorker {
         this.videoService = new VideoService(config);
     }
 
-    public async start(): Promise<void> {
-        this.logger.info("Starting video generation worker");
-        
-        while (true) {
-            try {
-                // Look for folders in unprocessed for video processing
-                const unprocessedFolders = await this.fileService.getUnprocessedFolders();
-                this.logger.info(`Found ${unprocessedFolders.length} folders in unprocessed directory`);
-                
-                if (unprocessedFolders.length > 0) {
-                    this.logger.info(`Folder names: ${unprocessedFolders.map(f => path.basename(f)).join(', ')}`);
-                }
-                
-                // Find first folder of any known type (only by name, structure check happens inside)
-                const folderMatch = this.findFolderByType(unprocessedFolders);
-                if (folderMatch) {
-                    this.logger.info(`Found ${folderMatch.type} folder for video generation: ${path.basename(folderMatch.folder)}`);
-                    await this.processFolder(folderMatch.folder, folderMatch.type);
-                    continue;
-                }
-
-                // No files or folders to process, wait
-                this.logger.info('No files or folders to process, waiting...');
-                await this.sleep(25000 + Math.floor(Math.random() * 5000));
-            } catch (error) {
-                this.logger.error("Error in video worker loop", error);
-                await this.sleep(10000);
-            }
-        }
-    }
-
-
-    private findFolderByType(folders: string[]): { folder: string; type: ContentType } | null {
+    public findFolderByType(folders: string[]): { folder: string; type: ContentType } | null {
         // Check folders in priority order
         for (const folder of folders) {
             const folderName = path.basename(folder);
@@ -75,8 +43,7 @@ export class VideoWorker {
         return null;
     }
 
-
-    private async processFolder(folderPath: string, folderType: ContentType): Promise<void> {
+    public async processFolder(folderPath: string, folderType: ContentType): Promise<void> {
         const folderName = path.basename(folderPath);
         const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
         let lockReleased = false;

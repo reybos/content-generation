@@ -16,31 +16,6 @@ export class ImageWorker {
         this.imageService = new ImageService(config);
     }
 
-    public async start(): Promise<void> {
-        this.logger.info("Starting Universal Worker - Image Generation");
-        
-        while (true) {
-            try {
-                const unprocessedFiles = await this.fileService.getUnprocessedFiles();
-                
-                if (unprocessedFiles.length > 0) {
-                    // Process only first file to allow other workers to pick up remaining files
-                    this.logger.info(`Found ${unprocessedFiles.length} unprocessed JSON files, processing first one`);
-                    await this.processFile(unprocessedFiles[0]);
-                    continue;
-                }
-
-                // No files to process, wait
-                this.logger.info('No files to process, waiting...');
-                await sleep(25000 + Math.floor(Math.random() * 5000));
-            } catch (error) {
-                this.logger.error("Error in image worker loop", error);
-                await sleep(10000);
-            }
-        }
-    }
-
-
     private detectContentType(fileOrFolderPath: string): ContentType | null {
         const name = path.basename(fileOrFolderPath);
         if (isHalloweenFile(name)) {
@@ -52,7 +27,7 @@ export class ImageWorker {
         return null;
     }
 
-    private async processFile(filePath: string): Promise<void> {
+    public async processFile(filePath: string): Promise<void> {
         // 1. Read JSON and determine format
         let data: ContentData;
         try {

@@ -33,19 +33,21 @@ export class ContentGenerationWorker {
                 // 1. Image Generation Phase: process JSON files and generate images
                 const unprocessedFiles = await this.fileService.getUnprocessedFiles();
                 if (unprocessedFiles.length > 0) {
-                    this.logger.info(`Found ${unprocessedFiles.length} unprocessed JSON files, running image worker for image generation`);
-                    await imageWorker.start();
+                    this.logger.info(`Found ${unprocessedFiles.length} unprocessed JSON files, processing first one`);
+                    await imageWorker.processFile(unprocessedFiles[0]);
                     workFound = true;
                 }
 
                 // 2. Video Generation Phase: process folders with images and JSON files for video
                 const unprocessedFolders = await this.fileService.getUnprocessedFolders();
-                const unprocessedFilesForVideo = await this.fileService.getUnprocessedFiles();
                 
-                if (unprocessedFolders.length > 0 || unprocessedFilesForVideo.length > 0) {
-                    this.logger.info(`Found ${unprocessedFolders.length} unprocessed folders and ${unprocessedFilesForVideo.length} unprocessed files, running video worker for video generation`);
-                    await videoWorker.start();
-                    workFound = true;
+                if (unprocessedFolders.length > 0) {
+                    const folderMatch = videoWorker.findFolderByType(unprocessedFolders);
+                    if (folderMatch) {
+                        this.logger.info(`Found ${folderMatch.type} folder for video generation: ${folderMatch.folder}`);
+                        await videoWorker.processFolder(folderMatch.folder, folderMatch.type);
+                        workFound = true;
+                    }
                 }
 
                 // If there was no work, wait
