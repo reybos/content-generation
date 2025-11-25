@@ -7,6 +7,7 @@
 export enum ContentType {
     HALLOWEEN = 'halloween',
     POEMS = 'poems',
+    POEMS_DIRECT_VIDEO = 'poems-direct-video',
 }
 
 /* END GENAI */

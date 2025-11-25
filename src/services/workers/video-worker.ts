@@ -60,42 +60,8 @@ export class VideoWorker {
                 return;
             }
 
-            // Initialize state
-            const state = await this.stateService.initializeState(
-                inProgressPath,
-                this.lockService.getWorkerId(),
-                this.maxRetries
-            );
-
-            // Check if max retries exceeded
-            if (await this.stateService.hasExceededMaxRetries(inProgressPath)) {
-                if (await this.stateService.isInCooldown(inProgressPath)) {
-                    this.logger.info(`Folder ${inProgressPath} is in cooldown period, skipping`);
-                    return;
-                }
-
-                const failedAttempts = state.failedAttempts || 0;
-                const baseDelay = 60000;
-                const maxDelay = 3600000;
-                const cooldownTime = Math.min(baseDelay * Math.pow(2, failedAttempts), maxDelay);
-
-                this.logger.warn(`Max retries exceeded for ${inProgressPath}, marking as failed with ${cooldownTime/1000}s cooldown`);
-                await this.stateService.markFailed(inProgressPath, "Max retries exceeded", cooldownTime);
-                await this.fileService.moveFailedFolder(folderName);
-                return;
-            }
-
-            // Prepare tasks (type-specific)
-            const tasks = await this.videoService.prepareVideoTasks(folderType, inProgressPath);
-            const sceneTasks = tasks.sceneTasks;
-            const additionalFrameTasks = tasks.additionalFrameTasks;
-
-            // Process videos (common logic for all types)
-            await this.processVideos(inProgressPath, sceneTasks, additionalFrameTasks);
-
-            // Move to processed
-            await this.fileService.moveProcessedFolder(folderName);
-            this.logger.info(`Successfully processed folder: ${folderName}`);
+            // Process the folder (common logic)
+            await this.processVideoFolder(inProgressPath, folderName, folderType);
             
         } catch (error) {
             this.logger.error(`Error processing folder ${inProgressPath}:`, error);
@@ -179,6 +145,112 @@ export class VideoWorker {
             this.logger.info(`All videos generated successfully, marking as completed`);
             await this.stateService.markCompleted(folderPath);
         }
+    }
+
+    public async processDirectVideoFile(filePath: string): Promise<void> {
+        const fileName = path.basename(filePath);
+        const folderName = path.basename(filePath, path.extname(filePath));
+
+        try {
+            // 1. Setup folder and lock (similar to ImageWorker)
+            const setupResult = await this.fileService.processFileWithLock(filePath, ContentType.POEMS_DIRECT_VIDEO);
+            if (!setupResult) {
+                return; // Already logged why it failed
+            }
+
+            const { folderPath } = setupResult;
+            const inProgressPath = folderPath;
+
+            // 2. Ensure blank-video.png exists in base directory and copy to folder if needed
+            const blankVideoSource = path.resolve(process.cwd(), 'blank-video.png');
+            const blankVideoInBase = path.join(this.fileService.getBaseDir(), 'blank-video.png');
+            const blankVideoInFolder = path.join(inProgressPath, 'blank-video.png');
+
+            // Copy blank-video.png to base directory if it doesn't exist there
+            if (!await fs.pathExists(blankVideoInBase)) {
+                if (await fs.pathExists(blankVideoSource)) {
+                    await fs.copy(blankVideoSource, blankVideoInBase);
+                    this.logger.info(`Copied blank-video.png to base directory: ${blankVideoInBase}`);
+                } else {
+                    throw new Error(`blank-video.png not found at ${blankVideoSource}`);
+                }
+            }
+
+            // Copy blank-video.png to folder
+            await fs.copy(blankVideoInBase, blankVideoInFolder);
+            this.logger.info(`Copied blank-video.png to folder: ${blankVideoInFolder}`);
+
+            // 3. Process the folder (common logic)
+            await this.processVideoFolder(inProgressPath, folderName, ContentType.POEMS_DIRECT_VIDEO);
+            this.logger.info(`Successfully processed direct-video file: ${fileName}`);
+            
+        } catch (error) {
+            this.logger.error(`Error processing direct-video file ${filePath}:`, error);
+            
+            try {
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                const inProgressPath = path.join(this.fileService.getInProgressDir(), folderName);
+                
+                if (await fs.pathExists(inProgressPath)) {
+                    await this.stateService.markFailed(inProgressPath, errorMessage);
+                }
+                await this.fileService.moveFailedFolder(folderName);
+            } catch (stateError) {
+                this.logger.error(`Error updating state for direct-video file ${filePath}`, stateError);
+                try {
+                    await this.fileService.moveFailedFolder(folderName);
+                } catch (moveError) {
+                    this.logger.error(`Failed to move folder to failed: ${folderName}`, moveError);
+                }
+            }
+        }
+    }
+
+    /**
+     * Common logic for processing a video folder that is already in in-progress
+     * Handles state initialization, retry checks, task preparation, video generation, and folder movement
+     */
+    private async processVideoFolder(
+        inProgressPath: string,
+        folderName: string,
+        folderType: ContentType
+    ): Promise<void> {
+        // Initialize state
+        const state = await this.stateService.initializeState(
+            inProgressPath,
+            this.lockService.getWorkerId(),
+            this.maxRetries
+        );
+
+        // Check if max retries exceeded
+        if (await this.stateService.hasExceededMaxRetries(inProgressPath)) {
+            if (await this.stateService.isInCooldown(inProgressPath)) {
+                this.logger.info(`Folder ${inProgressPath} is in cooldown period, skipping`);
+                return;
+            }
+
+            const failedAttempts = state.failedAttempts || 0;
+            const baseDelay = 60000;
+            const maxDelay = 3600000;
+            const cooldownTime = Math.min(baseDelay * Math.pow(2, failedAttempts), maxDelay);
+
+            this.logger.warn(`Max retries exceeded for ${inProgressPath}, marking as failed with ${cooldownTime/1000}s cooldown`);
+            await this.stateService.markFailed(inProgressPath, "Max retries exceeded", cooldownTime);
+            await this.fileService.moveFailedFolder(folderName);
+            return;
+        }
+
+        // Prepare tasks (type-specific)
+        const tasks = await this.videoService.prepareVideoTasks(folderType, inProgressPath);
+        const sceneTasks = tasks.sceneTasks;
+        const additionalFrameTasks = tasks.additionalFrameTasks;
+
+        // Process videos (common logic for all types)
+        await this.processVideos(inProgressPath, sceneTasks, additionalFrameTasks);
+
+        // Move to processed
+        await this.fileService.moveProcessedFolder(folderName);
+        this.logger.info(`Successfully processed folder: ${folderName}`);
     }
 
     private sleep(ms: number): Promise<void> {

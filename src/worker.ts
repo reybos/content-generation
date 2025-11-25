@@ -1,7 +1,7 @@
 /* START GENAI */
 
 import { FileService, ImageWorker, VideoWorker } from "./services";
-import { Logger, sleep } from "./utils";
+import { Logger, sleep, isPoemsDirectVideoFile } from "./utils";
 import { WorkerConfig } from "./types";
 
 /**
@@ -30,15 +30,32 @@ export class ContentGenerationWorker {
             try {
                 let workFound = false;
 
-                // 1. Image Generation Phase: process JSON files and generate images
-                const unprocessedFiles = await this.fileService.getUnprocessedFiles();
-                if (unprocessedFiles.length > 0) {
-                    this.logger.info(`Found ${unprocessedFiles.length} unprocessed JSON files, processing first one`);
-                    await imageWorker.processFile(unprocessedFiles[0]);
+                // 1. Direct Video Poems Phase: process direct-video poems files (skip image generation)
+                const allUnprocessedFiles = await this.fileService.getUnprocessedFiles();
+                const directVideoFiles = allUnprocessedFiles.filter(file => {
+                    const fileName = file.split(/[/\\]/).pop() || '';
+                    return isPoemsDirectVideoFile(fileName);
+                });
+                
+                if (directVideoFiles.length > 0) {
+                    this.logger.info(`Found ${directVideoFiles.length} direct-video poems files, processing first one`);
+                    await videoWorker.processDirectVideoFile(directVideoFiles[0]);
                     workFound = true;
                 }
 
-                // 2. Video Generation Phase: process folders with images and JSON files for video
+                // 2. Image Generation Phase: process JSON files and generate images (excluding direct-video files)
+                const regularFiles = allUnprocessedFiles.filter(file => {
+                    const fileName = file.split(/[/\\]/).pop() || '';
+                    return !isPoemsDirectVideoFile(fileName);
+                });
+                
+                if (regularFiles.length > 0) {
+                    this.logger.info(`Found ${regularFiles.length} unprocessed JSON files, processing first one`);
+                    await imageWorker.processFile(regularFiles[0]);
+                    workFound = true;
+                }
+
+                // 3. Video Generation Phase: process folders with images and JSON files for video
                 const unprocessedFolders = await this.fileService.getUnprocessedFolders();
                 
                 if (unprocessedFolders.length > 0) {

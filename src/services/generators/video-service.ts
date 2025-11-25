@@ -478,6 +478,9 @@ export class VideoService {
                 return this.prepareHalloweenTasks(folderPath);
             case ContentType.POEMS:
                 return this.prepareHalloweenTasks(folderPath);
+            case ContentType.POEMS_DIRECT_VIDEO:
+                const blankVideoPath = path.join(folderPath, 'blank-video.png');
+                return this.prepareDirectVideoTasks(folderPath, blankVideoPath);
             default:
                 throw new Error(`No handler for content type: ${contentType}`);
         }
@@ -564,6 +567,92 @@ export class VideoService {
                 
                 additionalFrameTasks.push({
                     imagePath: path.join(folderPath, `additional_frame_${frame.index}.png`),
+                    prompt: frame.group_video_prompt,
+                    outputPath: path.join(folderPath, `additional_frame_${frame.index}.mp4`),
+                    duration: this.ADDITIONAL_SCENE_DURATION,
+                    index: `additional_frame_${frame.index}`
+                });
+            }
+        }
+
+        return { sceneTasks, additionalFrameTasks };
+    }
+
+    /**
+     * Prepare direct video generation tasks for poems-direct-video files
+     * Uses blank-video.png as base image for all videos
+     */
+    public async prepareDirectVideoTasks(
+        folderPath: string,
+        blankVideoPath: string
+    ): Promise<{ sceneTasks: VideoGenerationTask[]; additionalFrameTasks: VideoGenerationTask[] }> {
+        // Read files in folder
+        const files = await fs.readdir(folderPath);
+        
+        // Find JSON file
+        const jsonFile = files.find((file) => file.endsWith(".json"));
+        if (!jsonFile) {
+            throw new Error("No JSON file found");
+        }
+
+        // Read JSON data
+        const jsonFilePath = path.join(folderPath, jsonFile);
+        const data = await this.fileService.readFile(jsonFilePath);
+        const newFormatData = data as any;
+
+        // Check if video_prompts exist
+        if (!newFormatData.video_prompts || !Array.isArray(newFormatData.video_prompts) || newFormatData.video_prompts.length === 0) {
+            throw new Error("No video_prompts found in JSON file");
+        }
+
+        // Verify blank-video.png exists
+        if (!await fs.pathExists(blankVideoPath)) {
+            throw new Error(`blank-video.png not found at ${blankVideoPath}`);
+        }
+
+        // Prepare tasks for main scenes using blank-video.png as base image
+        const sceneTasks: VideoGenerationTask[] = [];
+        for (let i = 0; i < newFormatData.video_prompts.length; i++) {
+            const videoPrompt = newFormatData.video_prompts[i];
+            if (!videoPrompt.video_prompt) {
+                throw new Error(`Missing video_prompt at index ${i}`);
+            }
+            
+            // Validate prompt length
+            const promptValidation = validatePromptLength(videoPrompt.video_prompt, this.MAX_PROMPT_LENGTH);
+            if (!promptValidation.isValid) {
+                throw new Error(`Scene ${i}: ${promptValidation.error}`);
+            }
+            
+            sceneTasks.push({
+                imagePath: blankVideoPath,
+                prompt: videoPrompt.video_prompt,
+                outputPath: path.join(folderPath, `scene_${i}.mp4`),
+                duration: this.MAIN_VIDEO_DURATION,
+                index: i
+            });
+        }
+
+        // Process additional frames if they exist
+        const additionalFramesCount = newFormatData.additional_frames ? newFormatData.additional_frames.length : 0;
+        const additionalFrameTasks: VideoGenerationTask[] = [];
+        
+        if (additionalFramesCount > 0) {
+            // Prepare tasks for additional frames using blank-video.png as base image
+            for (let i = 0; i < additionalFramesCount; i++) {
+                const frame = newFormatData.additional_frames[i];
+                if (!frame.group_video_prompt) {
+                    throw new Error(`Missing group_video_prompt for additional frame at index ${i}`);
+                }
+                
+                // Validate prompt length
+                const promptValidation = validatePromptLength(frame.group_video_prompt, this.MAX_PROMPT_LENGTH);
+                if (!promptValidation.isValid) {
+                    throw new Error(`Additional frame ${frame.index}: ${promptValidation.error}`);
+                }
+                
+                additionalFrameTasks.push({
+                    imagePath: blankVideoPath,
                     prompt: frame.group_video_prompt,
                     outputPath: path.join(folderPath, `additional_frame_${frame.index}.mp4`),
                     duration: this.ADDITIONAL_SCENE_DURATION,

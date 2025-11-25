@@ -57,13 +57,28 @@ export function isHalloweenTransform(filename: string): boolean {
 export const POEMS_FILE_PATTERN = 'poems';
 
 /**
+ * Poems direct video file pattern for format detection
+ */
+export const POEMS_DIRECT_VIDEO_PATTERN = 'poems-direct-video';
+
+/**
  * Check if filename matches poems file pattern
  * @param filename The filename to check
  * @returns True if filename matches poems pattern (contains 'poems')
  */
 export function isPoemsFile(filename: string): boolean {
     const lowerFilename = filename.toLowerCase();
-    return lowerFilename.includes(POEMS_FILE_PATTERN);
+    return lowerFilename.includes(POEMS_FILE_PATTERN) && !lowerFilename.includes(POEMS_DIRECT_VIDEO_PATTERN);
+}
+
+/**
+ * Check if filename matches poems direct video file pattern
+ * @param filename The filename to check
+ * @returns True if filename matches poems-direct-video pattern (contains 'poems-direct-video')
+ */
+export function isPoemsDirectVideoFile(filename: string): boolean {
+    const lowerFilename = filename.toLowerCase();
+    return lowerFilename.includes(POEMS_DIRECT_VIDEO_PATTERN);
 }
 
 /**
