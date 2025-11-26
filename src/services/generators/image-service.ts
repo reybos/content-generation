@@ -368,12 +368,12 @@ export class ImageService {
         folderPath: string,
         filePath: string,
         data: ContentData
-    ): Promise<{ sceneTasks: ImageGenerationTask[]; groupFrameTasks: ImageGenerationTask[] }> {
+    ): Promise<{ sceneTasks: ImageGenerationTask[]; groupFrameTasks?: ImageGenerationTask[]; additionalFrameTasks?: ImageGenerationTask[] }> {
         switch (contentType) {
             case ContentType.HALLOWEEN:
                 return this.prepareHalloweenImageTasks(folderPath, filePath, data as ScenePromptsData);
             case ContentType.POEMS:
-                return this.prepareHalloweenImageTasks(folderPath, filePath, data as ScenePromptsData);
+                return this.preparePoemsImageTasks(folderPath, filePath, data as ScenePromptsData);
             default:
                 throw new Error(`No handler for content type: ${contentType}`);
         }
@@ -451,12 +451,83 @@ export class ImageService {
     }
 
     /**
+     * Prepare Poems image generation tasks
+     */
+    private async preparePoemsImageTasks(
+        folderPath: string,
+        filePath: string,
+        data: ScenePromptsData
+    ): Promise<{ sceneTasks: ImageGenerationTask[]; additionalFrameTasks: ImageGenerationTask[] }> {
+        const isHalloweenTransformFormat = isHalloweenTransform(path.basename(filePath));
+
+        // Determine which prompts array to use based on format
+        const promptsToProcess = isHalloweenTransformFormat 
+            ? data.video_prompts.map((vp: any) => ({ prompt: vp.prompt, index: vp.index }))
+            : data.prompts.map((p: any, idx: number) => ({ prompt: p.prompt, index: idx }));
+
+        // Prepare tasks for main scenes
+        const sceneTasks: ImageGenerationTask[] = [];
+        for (let i = 0; i < promptsToProcess.length; i++) {
+            const prompt = promptsToProcess[i];
+            const sceneIndex = isHalloweenTransformFormat ? prompt.index : i;
+            
+            // Validate prompt length
+            const promptValidation = validatePromptLength(prompt.prompt, this.MAX_PROMPT_LENGTH);
+            if (!promptValidation.isValid) {
+                throw new Error(`Scene ${sceneIndex}: ${promptValidation.error}`);
+            }
+
+            // Create variants for each scene
+            for (let variant = 1; variant <= this.VARIANTS_PER_SCENE; variant++) {
+                const promptFolderPath = path.join(folderPath, `scene_${sceneIndex}`);
+                const imgPath = path.join(promptFolderPath, `variant_${variant}.png`);
+                
+                sceneTasks.push({
+                    prompt: prompt.prompt,
+                    sceneIndex,
+                    outputPath: imgPath,
+                    variant
+                });
+            }
+        }
+
+        // Prepare tasks for additional frames if they exist
+        const additionalFrameTasks: ImageGenerationTask[] = [];
+        if (data.additional_frames && data.additional_frames.length > 0) {
+            for (let i = 0; i < data.additional_frames.length; i++) {
+                const frame = data.additional_frames[i];
+                
+                // Validate prompt length
+                const promptValidation = validatePromptLength(frame.image_prompt, this.MAX_PROMPT_LENGTH);
+                if (!promptValidation.isValid) {
+                    throw new Error(`Additional frame ${frame.index}: ${promptValidation.error}`);
+                }
+
+                // Create variants for each additional frame
+                for (let variant = 1; variant <= this.VARIANTS_PER_SCENE; variant++) {
+                    const additionalFrameFolderPath = path.join(folderPath, `additional_frame_${frame.index}`);
+                    const imgPath = path.join(additionalFrameFolderPath, `variant_${variant}.png`);
+                    
+                    additionalFrameTasks.push({
+                        prompt: frame.image_prompt,
+                        sceneIndex: `additional_frame_${frame.index}`,
+                        outputPath: imgPath,
+                        variant
+                    });
+                }
+            }
+        }
+
+        return { sceneTasks, additionalFrameTasks };
+    }
+
+    /**
      * Generate a batch of images
      */
     public async generateImageBatch(
         tasks: ImageGenerationTask[],
         filePath: string,
-        type: 'scene' | 'group_frame'
+        type: 'scene' | 'group_frame' | 'additional_frame'
     ): Promise<ImageGenerationResult[]> {
         const allResults: ImageGenerationResult[] = [];
 

@@ -105,11 +105,15 @@ export class VideoWorker {
     private async processVideos(
         folderPath: string,
         sceneTasks: VideoGenerationTask[],
-        groupFrameTasks: VideoGenerationTask[]
+        groupFrameTasks: VideoGenerationTask[],
+        additionalFrameTasks: VideoGenerationTask[] = []
     ): Promise<void> {
         this.logger.info(`Found ${sceneTasks.length} video prompts and scene images`);
         if (groupFrameTasks.length > 0) {
             this.logger.info(`Found ${groupFrameTasks.length} group frames`);
+        }
+        if (additionalFrameTasks.length > 0) {
+            this.logger.info(`Found ${additionalFrameTasks.length} additional frames`);
         }
 
         // Generate videos for main scenes
@@ -129,8 +133,18 @@ export class VideoWorker {
             );
         }
 
+        // Generate videos for additional frames if they exist
+        let additionalFrameResults: VideoGenerationResult[] = [];
+        if (additionalFrameTasks.length > 0) {
+            additionalFrameResults = await this.videoService.generateVideoBatch(
+                additionalFrameTasks,
+                folderPath,
+                'additional_frame'
+            );
+        }
+
         // Collect all errors
-        const allErrors = [...sceneResults, ...groupFrameResults].filter(r => !r.success);
+        const allErrors = [...sceneResults, ...groupFrameResults, ...additionalFrameResults].filter(r => !r.success);
         
         // Make a decision about the folder's fate based on collected errors
         if (allErrors.length > 0) {
@@ -243,10 +257,11 @@ export class VideoWorker {
         // Prepare tasks (type-specific)
         const tasks = await this.videoService.prepareVideoTasks(folderType, inProgressPath);
         const sceneTasks = tasks.sceneTasks;
-        const groupFrameTasks = tasks.groupFrameTasks;
+        const groupFrameTasks = tasks.groupFrameTasks || [];
+        const additionalFrameTasks = tasks.additionalFrameTasks || [];
 
         // Process videos (common logic for all types)
-        await this.processVideos(inProgressPath, sceneTasks, groupFrameTasks);
+        await this.processVideos(inProgressPath, sceneTasks, groupFrameTasks, additionalFrameTasks);
 
         // Move to processed
         await this.fileService.moveProcessedFolder(folderName);

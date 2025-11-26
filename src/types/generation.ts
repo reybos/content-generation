@@ -90,6 +90,21 @@ export const GroupFrameSchema = z.object({
 });
 export type GroupFrame = z.infer<typeof GroupFrameSchema>;
 
+// Additional frame schema for POEMS (with image_prompt and video_prompt)
+export const AdditionalFrameSchema = z.object({
+    index: z.number(),
+    image_prompt: z.string(),
+    video_prompt: z.string()
+});
+export type AdditionalFrame = z.infer<typeof AdditionalFrameSchema>;
+
+// Additional frame schema for POEMS_DIRECT_VIDEO (only video_prompt)
+export const AdditionalFrameDirectVideoSchema = z.object({
+    index: z.number(),
+    video_prompt: z.string()
+});
+export type AdditionalFrameDirectVideo = z.infer<typeof AdditionalFrameDirectVideoSchema>;
+
 // Scene prompts format with arrays for titles, descriptions, and hashtags
 export const ScenePromptsDataSchema = z.object({
     prompts: z.array(PromptSchema),
@@ -97,7 +112,8 @@ export const ScenePromptsDataSchema = z.object({
     titles: z.array(z.string()),
     descriptions: z.array(z.string()),
     hashtags: z.array(z.string()),
-    group_frames: z.array(GroupFrameSchema).optional()
+    group_frames: z.array(GroupFrameSchema).optional(),
+    additional_frames: z.array(AdditionalFrameSchema).optional()
 });
 export type ScenePromptsData = z.infer<typeof ScenePromptsDataSchema>;
 
