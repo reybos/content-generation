@@ -41,9 +41,14 @@ app.post('/api/start', async (req, res) => {
             return res.status(400).json({ error: 'Workers are already running. Please stop them first.' });
         }
 
+        // Validate aspect ratio is provided
+        if (!req.body.aspectRatio || (req.body.aspectRatio !== '9:16' && req.body.aspectRatio !== '16:9')) {
+            return res.status(400).json({ error: 'Image Aspect Ratio is required and must be either 9:16 or 16:9' });
+        }
+
         const config: WorkerConfig = {
             workerCount: parseInt(req.body.workerCount) || 2,
-            aspectRatio: req.body.aspectRatio || '9:16',
+            aspectRatio: req.body.aspectRatio,
             videoModel: req.body.videoModel || 'fal-ai/minimax/hailuo-02/standard/image-to-video',
             imageModel: req.body.imageModel || undefined,
             batchSize: parseInt(req.body.batchSize) || 12,

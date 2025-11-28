@@ -48,6 +48,14 @@ form.addEventListener('submit', async (e) => {
         additionalSceneDuration: parseInt(document.getElementById('additionalSceneDuration').value),
     };
 
+    // Validate aspect ratio is selected
+    const aspectRatio = document.getElementById('aspectRatio').value;
+    if (!aspectRatio) {
+        alert('Please select an Image Aspect Ratio');
+        document.getElementById('aspectRatio').focus();
+        return;
+    }
+
     // Validate custom video model if selected
     if (videoModelSelect.value === 'custom' && !customVideoModelInput.value.trim()) {
         alert('Please enter a custom video model or select a preset model');
