@@ -525,18 +525,28 @@ export class VideoService {
                 throw new Error(`Missing video_prompt at index ${i}`);
             }
             
+            // Use videoPrompt.index if available, otherwise use array index i
+            const index = videoPrompt.index ?? i;
+            
             // Validate prompt length
             const promptValidation = validatePromptLength(videoPrompt.video_prompt, this.MAX_PROMPT_LENGTH);
             if (!promptValidation.isValid) {
-                throw new Error(`Scene ${i}: ${promptValidation.error}`);
+                throw new Error(`Scene ${index}: ${promptValidation.error}`);
+            }
+            
+            // Check if image exists for this index
+            const imagePath = path.join(folderPath, `scene_${index}.png`);
+            if (!await fs.pathExists(imagePath)) {
+                this.logger.warn(`Image file not found for scene ${index}: ${imagePath}, skipping video generation`);
+                continue;
             }
             
             sceneTasks.push({
-                imagePath: path.join(folderPath, `scene_${i}.png`),
+                imagePath: imagePath,
                 prompt: videoPrompt.video_prompt,
-                outputPath: path.join(folderPath, `scene_${i}.mp4`),
+                outputPath: path.join(folderPath, `scene_${index}.mp4`),
                 duration: this.MAIN_VIDEO_DURATION,
-                index: i
+                index: index
             });
         }
 
@@ -617,18 +627,28 @@ export class VideoService {
                 throw new Error(`Missing video_prompt at index ${i}`);
             }
             
+            // Use videoPrompt.index if available, otherwise use array index i
+            const index = videoPrompt.index ?? i;
+            
             // Validate prompt length
             const promptValidation = validatePromptLength(videoPrompt.video_prompt, this.MAX_PROMPT_LENGTH);
             if (!promptValidation.isValid) {
-                throw new Error(`Scene ${i}: ${promptValidation.error}`);
+                throw new Error(`Scene ${index}: ${promptValidation.error}`);
+            }
+            
+            // Check if image exists for this index
+            const imagePath = path.join(folderPath, `scene_${index}.png`);
+            if (!await fs.pathExists(imagePath)) {
+                this.logger.warn(`Image file not found for scene ${index}: ${imagePath}, skipping video generation`);
+                continue;
             }
             
             sceneTasks.push({
-                imagePath: path.join(folderPath, `scene_${i}.png`),
+                imagePath: imagePath,
                 prompt: videoPrompt.video_prompt,
-                outputPath: path.join(folderPath, `scene_${i}.mp4`),
+                outputPath: path.join(folderPath, `scene_${index}.mp4`),
                 duration: this.MAIN_VIDEO_DURATION,
-                index: i
+                index: index
             });
         }
 
