@@ -571,10 +571,10 @@ export class ImageService {
             const sceneResults = await Promise.all(scenePromises);
             allResults.push(...sceneResults);
 
-            // Add 5 second delay before next batch (except for last scene)
+            // Add 1.5 second delay before next batch (except for last scene)
             if (i < scenes.length - 1) {
                 this.logger.info(`Waiting 5 seconds before sending next batch...`);
-                await this.delay(5000);
+                await this.delay(1500);
             }
         }
 
